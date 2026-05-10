@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# bin/memory-server — MCP server entry point.
+#
+# Runs memory's MCP server over stdio. Claude Code spawns this as a
+# subprocess per the .mcp.json registration.
+set -euo pipefail
+MEMORY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+exec python3 "$MEMORY_ROOT/lib/server.py" "$@"

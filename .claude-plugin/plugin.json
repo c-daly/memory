@@ -1,0 +1,8 @@
+{
+  "name": "memory",
+  "version": "0.0.1",
+  "description": "Durable agent observation memory (user/feedback/project/reference) for Claude Code",
+  "author": {
+    "name": "c-daly"
+  }
+}

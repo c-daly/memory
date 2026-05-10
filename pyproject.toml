@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "memory"
+version = "0.0.1"
+description = "Durable agent observation memory for Claude Code"
+authors = ["c-daly"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pyyaml = "^6.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+ruff = "^0.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

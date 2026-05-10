@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# bin/memory — CLI entry point.
+#
+# For shell callers (hooks, scripts, debugging). Mirrors the MCP server's
+# tool surface as command-line subcommands.
+set -euo pipefail
+MEMORY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+exec python3 "$MEMORY_ROOT/lib/cli.py" "$@"
