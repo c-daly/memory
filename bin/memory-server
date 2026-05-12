@@ -31,4 +31,10 @@ if [[ ! -x "$VENV/bin/python" ]]; then
     bootstrap_venv
 fi
 
+# bin/memory delegates venv bootstrap here; honor the contract and exit
+# without launching the MCP server.
+if [[ "${1:-}" == "--bootstrap-only" ]]; then
+    exit 0
+fi
+
 exec "$VENV/bin/python" "$MEMORY_ROOT/lib/server.py" "$@"

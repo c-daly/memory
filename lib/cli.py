@@ -24,7 +24,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 import index  # noqa: E402
 import memory_reader  # noqa: E402
 import memory_writer  # noqa: E402
-from providers.base import Entry  # noqa: E402
+from providers.base import (  # noqa: E402
+    Entry,
+    MemoryAmbiguousSubjectError,
+    MemoryCollisionError,
+)
 
 
 def _resolve_vault_root() -> Path:
@@ -52,13 +56,17 @@ def _render_entry(entry: Entry) -> str:
 
 def cmd_write(args: argparse.Namespace) -> int:
     body = sys.stdin.read()
-    path = memory_writer.write(
-        name=args.name,
-        description=args.description,
-        type=args.type,
-        subject=args.subject,
-        body=body,
-    )
+    try:
+        path = memory_writer.write(
+            name=args.name,
+            description=args.description,
+            type=args.type,
+            subject=args.subject,
+            body=body,
+        )
+    except (ValueError, MemoryCollisionError, MemoryAmbiguousSubjectError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     print(path)
     return 0
 
