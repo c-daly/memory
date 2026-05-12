@@ -38,15 +38,26 @@ def _kebab(name: str) -> str:
 
 
 def _parse(text: str) -> tuple[dict, str]:
-    """Split a markdown-with-frontmatter document into (meta, body)."""
-    if not text.startswith("---\n"):
+    """Split a markdown-with-frontmatter document into (meta, body).
+
+    Frontmatter is delimited by lines that are *only* '---'. A bare
+    substring search would fire inside the frontmatter for any field
+    whose value contains '---' on a line (yaml.safe_dump emits short
+    string values unquoted), producing a truncated meta dict.
+    """
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
         return {}, text
-    end = text.find("\n---\n", 4)
-    if end == -1:
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].rstrip("\r\n") == "---":
+            end = i
+            break
+    if end is None:
         return {}, text
-    data = yaml.safe_load(text[4:end])
+    data = yaml.safe_load("".join(lines[1:end]))
     meta = data if isinstance(data, dict) else {}
-    body = text[end + 5 :]
+    body = "".join(lines[end + 1:])
     return meta, body
 
 

@@ -143,21 +143,33 @@ class VaultProvider(Provider):
 
     @staticmethod
     def _parse(text: str) -> Entry | None:
-        """Parse a memory file. Return None if it's not a valid memory entry."""
-        if not text.startswith("---\n"):
+        """Parse a memory file. Return None if it's not a valid memory entry.
+
+        Frontmatter is delimited by lines that are *only* '---'. The
+        previous text.split delimiter could fire inside the frontmatter
+        for any field whose value happened to end with '---' on a line
+        (yaml.safe_dump emits unquoted bare values directly, so a
+        description ending in '---' produces exactly that pattern).
+        """
+        lines = text.splitlines(keepends=True)
+        if not lines or lines[0].rstrip("\r\n") != "---":
+            return None
+        end = None
+        for i in range(1, len(lines)):
+            if lines[i].rstrip("\r\n") == "---":
+                end = i
+                break
+        if end is None:
             return None
         try:
-            _, fm_text, body = text.split("---\n", 2)
-        except ValueError:
-            return None
-        try:
-            data = yaml.safe_load(fm_text) or {}
+            data = yaml.safe_load("".join(lines[1:end])) or {}
         except yaml.YAMLError:
             return None
         if not isinstance(data, dict):
             return None
         if not all(k in data for k in _REQUIRED_FRONTMATTER):
             return None
+        body = "".join(lines[end + 1:])
         if body.startswith("\n"):
             body = body[1:]
         return Entry(

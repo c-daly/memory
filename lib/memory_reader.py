@@ -26,18 +26,34 @@ def _resolve_vault_root() -> Path:
 
 
 def _parse_entry_file(abs_path: Path) -> Entry | None:
-    """Parse a memory entry markdown file (YAML frontmatter + body) into an Entry."""
+    """Parse a memory entry markdown file (YAML frontmatter + body) into an Entry.
+
+    Frontmatter is delimited by lines that are *only* '---'. A bare
+    substring split would fire inside the frontmatter for any field
+    whose value contains '---' (e.g. description='setup --- teardown'),
+    making the entry silently invisible on read.
+    """
     try:
         text = abs_path.read_text(encoding="utf-8")
     except OSError:
         return None
-    if not text.startswith("---"):
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
         return None
-    parts = text.split("---", 2)
-    if len(parts) < 3:
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].rstrip("\r\n") == "---":
+            end = i
+            break
+    if end is None:
         return None
-    fm = yaml.safe_load(parts[1]) or {}
-    body = parts[2].lstrip("\n")
+    try:
+        fm = yaml.safe_load("".join(lines[1:end])) or {}
+    except yaml.YAMLError:
+        return None
+    if not isinstance(fm, dict):
+        return None
+    body = "".join(lines[end + 1:]).lstrip("\n")
     required = ("name", "description", "type", "subject")
     if not all(fm.get(k) for k in required):
         return None

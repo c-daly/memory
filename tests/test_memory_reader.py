@@ -270,3 +270,39 @@ def test_get_does_not_rebuild_on_real_miss(
         entry = memory_reader.get("missing", "project")
     assert entry is None
     rebuild.assert_not_called()
+
+
+def test_parse_entry_file_handles_dashes_in_description(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Description values that contain '---' must not confuse the
+    frontmatter parser. Regression for greptile P1: the previous
+    split-on-substring parser fired inside the frontmatter when a field
+    value contained '---', silently dropping the entry on read."""
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    entry_dir = tmp_path / "10-projects" / "foo" / "project"
+    entry_dir.mkdir(parents=True)
+    # yaml.safe_dump produces 'description: setup --- teardown' (unquoted,
+    # single line). Old parser saw '---' as a delimiter and split mid-yaml.
+    entry_file = entry_dir / "2026-05-12-dashes.md"
+    entry_file.write_text(
+        "---\n"
+        "name: dashes\n"
+        "description: setup --- teardown\n"
+        "type: project\n"
+        "subject: foo\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "MEMORY.md").write_text(
+        "# MEMORY\n\n"
+        f"- [[{entry_file.relative_to(tmp_path)}|dashes]] · "
+        f"type:project subject:foo · setup --- teardown\n",
+        encoding="utf-8",
+    )
+
+    entry = memory_reader.get("dashes", "project")
+    assert entry is not None
+    assert entry.name == "dashes"
+    assert entry.description == "setup --- teardown"
