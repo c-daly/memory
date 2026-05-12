@@ -136,3 +136,58 @@ def test_write_collision_raises(
             body="two",
             provider=provider,
         )
+
+
+@pytest.mark.parametrize("bad_subject", ["Project Alpha", "foo bar", "tab\there", "line\nbreak"])
+def test_write_subject_with_whitespace_raises(
+    vault: Path, provider: FilesystemProvider, bad_subject: str
+) -> None:
+    """Subjects containing whitespace would break MEMORY.md bullet parsing.
+
+    The bullet format reserves whitespace as a field delimiter; an entry
+    written with 'Project Alpha' as its subject would round-trip into an
+    index line that the parser would silently skip.
+    """
+    with pytest.raises(ValueError, match="whitespace"):
+        memory_writer.write(
+            name="x",
+            description="d",
+            type="project",
+            subject=bad_subject,
+            body="b",
+            provider=provider,
+        )
+
+
+def test_write_subject_with_separator_raises(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    """Subjects must not contain the bullet separator character ('·').
+
+    The separator is what splits a bullet into its (path|name) | type/subject |
+    description segments; a subject containing it would scramble parsing.
+    """
+    with pytest.raises(ValueError, match="separator"):
+        memory_writer.write(
+            name="x",
+            description="d",
+            type="project",
+            subject="foo·bar",
+            body="b",
+            provider=provider,
+        )
+
+
+def test_write_subject_with_slash_allowed(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    """PARA-style path subjects (slashes, dashes) remain valid."""
+    path = memory_writer.write(
+        name="x",
+        description="d",
+        type="project",
+        subject="10-projects/memory",
+        body="b",
+        provider=provider,
+    )
+    assert path

@@ -62,6 +62,22 @@ def write(
         if not val or not val.strip():
             raise ValueError(f"{field_name} is required")
 
+    # The MEMORY.md bullet format embeds subject verbatim, with ' · '
+    # (U+00B7) as the field separator. A subject that contains whitespace
+    # or the separator breaks parser round-trip: the bullet's filter-
+    # by-subject lookup would silently miss this entry. Validate at the
+    # writer (the only supported entry point) rather than letting bad
+    # subjects reach the index.
+    if any(c.isspace() for c in subject):
+        raise ValueError(
+            f"subject must not contain whitespace; got {subject!r}"
+        )
+    if "\u00b7" in subject:
+        raise ValueError(
+            f"subject must not contain the index separator '\u00b7'; "
+            f"got {subject!r}"
+        )
+
     provider = provider if provider is not None else _get_provider()
     vault_root = _resolve_vault_root()
 
