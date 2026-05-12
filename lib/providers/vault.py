@@ -49,11 +49,30 @@ class VaultProvider(Provider):
     # -- placement (the v1 filing rule; isolated for v2 swap-in) ---------
 
     def _resolve_subject_folder(self, subject: str) -> Path:
-        """Map an entry's subject to a folder under vault_root."""
+        """Map an entry's subject to a folder under vault_root.
+
+        Path-shaped subjects (containing '/') must be relative and free of
+        '..' parts: a subject is a hint about *where in the vault* an
+        entry belongs, never an escape hatch out of it. Subjects can be
+        LLM- or user-generated, so an adversarial '../../../tmp' must not
+        let put() write outside the vault.
+        """
         if "/" in subject:
             rel = Path(subject)
+            if rel.is_absolute() or ".." in rel.parts:
+                raise ValueError(
+                    f"subject must be a vault-relative path without '..' "
+                    f"segments; got {subject!r}"
+                )
+            vault_resolved = self.vault_root.resolve()
             for root in PARA_ROOTS:
-                candidate = self.vault_root / root / rel
+                candidate = (self.vault_root / root / rel).resolve()
+                # Defense in depth: even with the '..'-in-parts guard
+                # above, a symlink inside the vault could escape on
+                # resolution. Drop candidates that don't stay under the
+                # resolved vault_root.
+                if not candidate.is_relative_to(vault_resolved):
+                    continue
                 if candidate.is_dir():
                     return candidate
             return self.vault_root / INBOX

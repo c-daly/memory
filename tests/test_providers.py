@@ -384,3 +384,65 @@ class TestFilesystemProviderCrossDayCollision:
         _FrozenDate._today = _dt.date(2026, 1, 2)
         with pytest.raises(MemoryCollisionError):
             provider.put(_make_entry("project", name="x", subject="foo"))
+
+
+# ---------------------------------------------------------------------------
+# VaultProvider — subject path-traversal guards (P1/security)
+# ---------------------------------------------------------------------------
+
+
+class TestVaultProviderSubjectTraversal:
+    @pytest.mark.parametrize(
+        "subject",
+        [
+            "../../../tmp",
+            "10-projects/../../../tmp",
+            "foo/..",
+            "..",  # not path-shaped (no "/"), exercised separately below
+        ],
+    )
+    def test_dotdot_in_path_shaped_subject_rejected(
+        self, vault: Path, subject: str
+    ) -> None:
+        provider = VaultProvider(vault_root=vault)
+        if "/" not in subject:
+            # Single-word ".." is treated as a flat subject; matching via
+            # os.walk anchored at vault_root cannot escape, so this falls
+            # through to inbox rather than raising. Verify it doesn't
+            # crash and stays inside the vault.
+            written = Path(
+                provider.put(_make_entry("project", name="x", subject=subject))
+            )
+            assert written.is_relative_to(vault)
+            return
+        with pytest.raises(ValueError, match=r"\.\.|absolute"):
+            provider.put(_make_entry("project", name="x", subject=subject))
+
+    def test_absolute_path_subject_rejected(self, vault: Path) -> None:
+        provider = VaultProvider(vault_root=vault)
+        with pytest.raises(ValueError, match=r"\.\.|absolute"):
+            provider.put(_make_entry("project", name="x", subject="/etc/passwd"))
+
+    def test_symlink_escape_does_not_resolve_outside_vault(
+        self, vault: Path, tmp_path: Path
+    ) -> None:
+        """Even if a symlink inside the vault points outside, candidates
+        that resolve outside vault_root are skipped (no put-outside)."""
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        # Pre-create a PARA root so the symlink lives inside vault.
+        (vault / "10-projects").mkdir(parents=True, exist_ok=True)
+        try:
+            (vault / "10-projects" / "escape").symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unsupported on this filesystem")
+
+        provider = VaultProvider(vault_root=vault)
+        # subject "escape/sub" would resolve to outside/sub through the symlink;
+        # the candidate is rejected, and since no other PARA root matches,
+        # the entry falls to inbox — never to `outside`.
+        written = Path(
+            provider.put(_make_entry("project", name="x", subject="escape/sub"))
+        )
+        assert written.is_relative_to(vault)
+        assert not any(outside.rglob("*.md"))
