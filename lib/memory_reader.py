@@ -35,7 +35,9 @@ def _parse_entry_file(abs_path: Path) -> Entry | None:
     """
     try:
         text = abs_path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # Non-UTF-8 bytes in an entry file shouldn't crash list()/get();
+        # treat the file as malformed and skip it, same as a read error.
         return None
     lines = text.splitlines(keepends=True)
     if not lines or lines[0].rstrip("\r\n") != "---":

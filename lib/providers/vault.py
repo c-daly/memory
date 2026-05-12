@@ -207,7 +207,7 @@ class VaultProvider(Provider):
             return None
         try:
             text = idx.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             return None
         for line in text.splitlines():
             m = self._INDEX_BULLET_RE.match(line)
@@ -246,7 +246,7 @@ class VaultProvider(Provider):
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 continue
             entry = self._parse(text)
             if entry is not None:
@@ -257,7 +257,7 @@ class VaultProvider(Provider):
         if path is not None:
             try:
                 entry = self._parse(path.read_text(encoding="utf-8"))
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 entry = None
             if entry is not None and entry.name == name and entry.type == type:
                 return entry

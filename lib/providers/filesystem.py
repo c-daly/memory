@@ -100,7 +100,11 @@ class FilesystemProvider(Provider):
         slug = _kebab(name)
         suffix = f"-{type}-{slug}.md"
         for path in self.root.glob(f"*{suffix}"):
-            meta, body = _parse(path.read_text(encoding="utf-8"))
+            try:
+                meta, body = _parse(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                # Skip files we can't read or decode; treat as no match.
+                continue
             return Entry(
                 name=meta.get("name", name),
                 description=meta.get("description", ""),
@@ -122,7 +126,11 @@ class FilesystemProvider(Provider):
             return []
         entries: list[Entry] = []
         for path in sorted(self.root.glob("*.md")):
-            meta, body = _parse(path.read_text(encoding="utf-8"))
+            try:
+                meta, body = _parse(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError):
+                # Skip files we can't read or decode; never crash list().
+                continue
             entry = Entry(
                 name=meta.get("name", path.stem),
                 description=meta.get("description", ""),

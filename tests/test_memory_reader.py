@@ -306,3 +306,57 @@ def test_parse_entry_file_handles_dashes_in_description(
     assert entry is not None
     assert entry.name == "dashes"
     assert entry.description == "setup --- teardown"
+
+
+def test_get_skips_entry_with_non_utf8_body(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A memory file whose body contains non-UTF-8 bytes must not crash
+    list()/get(). Treat as malformed and skip — matches the existing
+    OSError handling semantics."""
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    entry_dir = tmp_path / "10-projects" / "foo" / "project"
+    entry_dir.mkdir(parents=True)
+    bad = entry_dir / "2026-05-12-bad.md"
+    bad.write_bytes(
+        b"---\nname: bad\ndescription: d\ntype: project\nsubject: foo\n---\n"
+        + b"\xff\xff non-utf8 body"
+    )
+    # Manually populate MEMORY.md so reader.get() finds the index entry
+    # and then tries to read the file (where the crash used to happen).
+    (tmp_path / "MEMORY.md").write_text(
+        "# MEMORY\n\n"
+        f"- [[{bad.relative_to(tmp_path)}|bad]] · type:project subject:foo · d\n",
+        encoding="utf-8",
+    )
+
+    # Before the fix this raised UnicodeDecodeError from read_text.
+    assert memory_reader.get("bad", "project") is None
+
+
+def test_list_skips_entries_with_non_utf8_bodies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One malformed file must not poison the whole list() result."""
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    entry_dir = tmp_path / "10-projects" / "foo" / "project"
+    entry_dir.mkdir(parents=True)
+    good = entry_dir / "2026-05-12-good.md"
+    good.write_text(
+        "---\nname: good\ndescription: d\ntype: project\nsubject: foo\n---\nbody\n",
+        encoding="utf-8",
+    )
+    bad = entry_dir / "2026-05-12-bad.md"
+    bad.write_bytes(
+        b"---\nname: bad\ndescription: d\ntype: project\nsubject: foo\n---\n"
+        + b"\xff\xff non-utf8"
+    )
+    (tmp_path / "MEMORY.md").write_text(
+        "# MEMORY\n\n"
+        f"- [[{good.relative_to(tmp_path)}|good]] · type:project subject:foo · d\n"
+        f"- [[{bad.relative_to(tmp_path)}|bad]] · type:project subject:foo · d\n",
+        encoding="utf-8",
+    )
+
+    names = [e.name for e in memory_reader.list()]
+    assert names == ["good"]
