@@ -31,27 +31,7 @@ from providers.base import (  # noqa: E402
 )
 
 
-def _resolve_vault_root() -> Path:
-    env = os.environ.get("MEMORY_VAULT_DIR")
-    return Path(env) if env else Path.home() / "projects" / "vault"
-
-
-def _render_entry(entry: Entry) -> str:
-    """Render an Entry as a YAML-frontmatter markdown document.
-
-    The output is itself a valid memory file, so callers can pipe `get`
-    into a file and replay it through `write` if needed.
-    """
-    body = entry.body if entry.body.endswith("\n") else entry.body + "\n"
-    return (
-        "---\n"
-        f"name: {entry.name}\n"
-        f"description: {entry.description}\n"
-        f"type: {entry.type}\n"
-        f"subject: {entry.subject}\n"
-        "---\n"
-        f"{body}"
-    )
+from config import resolve_vault_root as _resolve_vault_root  # noqa: E402
 
 
 def cmd_write(args: argparse.Namespace) -> int:
@@ -83,7 +63,7 @@ def cmd_get(args: argparse.Namespace) -> int:
     if entry is None:
         print("not found", file=sys.stderr)
         return 1
-    sys.stdout.write(_render_entry(entry))
+    sys.stdout.write(entry.to_markdown())
     return 0
 
 

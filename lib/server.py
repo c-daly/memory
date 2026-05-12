@@ -3,7 +3,6 @@
 Mirrors the path-setup + tool-registration pattern from continuity/lib/server.py.
 Invoked by bin/memory-server via the plugin-local .venv.
 """
-import os
 import sys
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from mcp.server.fastmcp import FastMCP  # noqa: E402
 import index  # noqa: E402
 import memory_reader  # noqa: E402
 import memory_writer  # noqa: E402
+from config import resolve_vault_root  # noqa: E402
 
 mcp = FastMCP("memory")
 
@@ -53,23 +53,13 @@ def memory_get(name: str, type: str) -> str:
     entry = memory_reader.get(name=name, type=type)
     if entry is None:
         return "not found"
-    fm = (
-        "---\n"
-        f"name: {entry.name}\n"
-        f"description: {entry.description}\n"
-        f"type: {entry.type}\n"
-        f"subject: {entry.subject}\n"
-        "---\n\n"
-    )
-    return fm + entry.body
+    return entry.to_markdown()
 
 
 @mcp.tool()
 def memory_rebuild_index() -> int:
     """Regenerate the MEMORY.md index from filesystem scan. Returns entry count."""
-    vault_root = Path(
-        os.environ.get("MEMORY_VAULT_DIR", Path.home() / "projects" / "vault")
-    )
+    vault_root = resolve_vault_root()
     return index.rebuild_from_scan(vault_root)
 
 

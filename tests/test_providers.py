@@ -533,3 +533,44 @@ class TestProvidersHandleNonUtf8Bytes:
         )
         provider = FilesystemProvider(root=tmp_path)
         assert provider.get("bad", "project") is None
+
+
+# ---------------------------------------------------------------------------
+# Entry.to_markdown — round-trip with the parsers
+# ---------------------------------------------------------------------------
+
+
+class TestEntryToMarkdown:
+    def test_round_trips_through_filesystem_parse(self, tmp_path: Path) -> None:
+        """Render an Entry to markdown, write it to disk, parse it back via
+        FilesystemProvider.get — fields must match. This is the contract
+        the cli's `get | tee | write` workflow depends on."""
+        from providers.filesystem import FilesystemProvider, _parse
+
+        original = Entry(
+            name="round-trip",
+            description="a test of to_markdown",
+            type="project",
+            subject="foo",
+            body="hello body\n",
+        )
+        md = original.to_markdown()
+        meta, body = _parse(md)
+        assert meta["name"] == original.name
+        assert meta["description"] == original.description
+        assert meta["type"] == original.type
+        assert meta["subject"] == original.subject
+        assert body == original.body
+
+    def test_body_is_normalized_to_end_with_newline(self) -> None:
+        """A body that lacks a trailing newline must be normalized so the
+        markdown output is well-formed and round-trips cleanly."""
+        entry = Entry(
+            name="x", description="d", type="project", subject="foo",
+            body="no trailing newline",
+        )
+        md = entry.to_markdown()
+        assert md.endswith("\n")
+        # And the body portion after the closing '---' ends with a newline.
+        body_portion = md.split("---\n", 2)[2]
+        assert body_portion == "no trailing newline\n"
