@@ -533,3 +533,72 @@ class TestProvidersHandleNonUtf8Bytes:
         )
         provider = FilesystemProvider(root=tmp_path)
         assert provider.get("bad", "project") is None
+
+
+# ---------------------------------------------------------------------------
+# Entry.to_markdown — round-trip with the parsers
+# ---------------------------------------------------------------------------
+
+
+class TestEntryToMarkdown:
+    def test_round_trips_through_filesystem_parse(self, tmp_path: Path) -> None:
+        """Render an Entry to markdown, parse it back — fields must match.
+
+        This is the contract the cli's `get | tee | write` workflow
+        depends on. Uses values that would break naive f-string YAML
+        emission ('#' is a YAML comment marker; ':' starts a key)
+        to prove the safe_dump-based serializer escapes them properly.
+        """
+        from providers.filesystem import _parse
+
+        original = Entry(
+            name="round-trip",
+            description="a test with # hash and : colon",
+            type="project",
+            subject="foo",
+            body="hello body\n",
+        )
+        md = original.to_markdown()
+        meta, body = _parse(md)
+        assert meta["name"] == original.name
+        assert meta["description"] == original.description
+        assert meta["type"] == original.type
+        assert meta["subject"] == original.subject
+        assert body == original.body
+
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("description", "# heading note"),
+            ("description", "key: value pair"),
+            ("description", "trailing %"),
+            ("description", "multiword sentence here"),
+            ("name", "title-with-dashes"),
+        ],
+    )
+    def test_round_trips_with_yaml_hostile_values(
+        self, field: str, value: str
+    ) -> None:
+        """Each character class that breaks naive YAML interpolation
+        must round-trip cleanly: '#' (comment), ':' (key), leading/
+        trailing whitespace, etc. The safe_dump-based serializer
+        handles all of these; the previous f-string version did not."""
+        from providers.filesystem import _parse
+        fields = dict(name="x", description="d", type="project", subject="foo", body="b\n")
+        fields[field] = value
+        entry = Entry(**fields)
+        meta, body = _parse(entry.to_markdown())
+        assert meta[field] == value
+
+    def test_body_is_normalized_to_end_with_newline(self) -> None:
+        """A body that lacks a trailing newline must be normalized so the
+        markdown output is well-formed and round-trips cleanly."""
+        entry = Entry(
+            name="x", description="d", type="project", subject="foo",
+            body="no trailing newline",
+        )
+        md = entry.to_markdown()
+        assert md.endswith("\n")
+        # And the body portion after the closing '---' ends with a newline.
+        body_portion = md.split("---\n", 2)[2]
+        assert body_portion == "no trailing newline\n"

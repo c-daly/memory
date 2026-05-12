@@ -13,16 +13,11 @@ import os
 from pathlib import Path
 
 import index
+from config import resolve_vault_root as _resolve_vault_root
 from providers.base import Entry, Provider
 from providers.vault import VaultProvider
 
 VALID_TYPES = {"user", "feedback", "project", "reference"}
-
-
-def _resolve_vault_root() -> Path:
-    """Return the vault root from $MEMORY_VAULT_DIR or the default."""
-    env = os.environ.get("MEMORY_VAULT_DIR")
-    return Path(env) if env else Path.home() / "projects" / "vault"
 
 
 def _get_provider() -> Provider:

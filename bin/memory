@@ -2,7 +2,25 @@
 # bin/memory — CLI entry point.
 #
 # For shell callers (hooks, scripts, debugging). Mirrors the MCP server's
-# tool surface as command-line subcommands.
+# tool surface as command-line subcommands. Uses the plugin's .venv
+# (same bootstrap as memory-server) so the CLI works without system-wide
+# pip installs.
 set -euo pipefail
 MEMORY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-exec python3 "$MEMORY_ROOT/lib/cli.py" "$@"
+VENV="$MEMORY_ROOT/.venv"
+
+if [[ ! -x "$VENV/bin/python" ]]; then
+    # Delegate bootstrap to memory-server for DRY (just need the venv)
+    "$MEMORY_ROOT/bin/memory-server" --bootstrap-only </dev/null >/dev/null 2>&1 || true
+    if [[ ! -x "$VENV/bin/python" ]]; then
+        if command -v uv >/dev/null 2>&1; then
+            uv venv "$VENV" >&2
+            uv pip install --python "$VENV/bin/python" mcp "pyyaml>=6.0" >&2
+        else
+            echo "memory: $VENV missing; install 'uv' or create .venv manually (see bin/memory-server)." >&2
+            exit 1
+        fi
+    fi
+fi
+
+exec "$VENV/bin/python" "$MEMORY_ROOT/lib/cli.py" "$@"

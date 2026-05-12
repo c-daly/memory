@@ -30,6 +30,29 @@ class Entry:
     subject: str
     body: str
 
+    def to_markdown(self) -> str:
+        """Render this Entry as a YAML-frontmatter markdown document.
+
+        Frontmatter is serialized via yaml.safe_dump so values that
+        would otherwise break naive interpolation (e.g. a description
+        containing '#' which YAML treats as a comment, or ':' which
+        starts a key, or embedded newlines) round-trip correctly.
+
+        The body is normalized to end with a newline so the output is
+        itself a valid memory file: piping get() into a file and
+        replaying it through write() round-trips the entry.
+        """
+        import yaml as _yaml
+        frontmatter = {
+            "name": self.name,
+            "description": self.description,
+            "type": self.type,
+            "subject": self.subject,
+        }
+        fm_text = _yaml.safe_dump(frontmatter, sort_keys=False).strip()
+        body = self.body if self.body.endswith("\n") else self.body + "\n"
+        return f"---\n{fm_text}\n---\n{body}"
+
 
 class MemoryCollisionError(Exception):
     """Raised by `put` when the resolved storage location already exists.

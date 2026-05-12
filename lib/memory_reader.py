@@ -9,20 +9,15 @@ If MEMORY.md is missing or empty, list/get fall back to rebuild_from_scan once.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 import yaml
 
 import index
+from config import resolve_vault_root as _resolve_vault_root
 from providers.base import Entry
 
 log = logging.getLogger(__name__)
-
-
-def _resolve_vault_root() -> Path:
-    env = os.environ.get("MEMORY_VAULT_DIR")
-    return Path(env) if env else Path.home() / "projects" / "vault"
 
 
 def _parse_entry_file(abs_path: Path) -> Entry | None:
