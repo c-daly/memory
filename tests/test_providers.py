@@ -301,26 +301,59 @@ class TestVaultProviderIndexFastPath:
         # Sanity: the real file is what we got back
         assert (vault / written.relative_to(vault)).is_file()
 
-    def test_list_filters_via_index(self, vault: Path) -> None:
+    def test_list_does_not_trust_index_alone(self, vault: Path) -> None:
+        """Regression guard: a direct provider.put() not yet reflected in
+        MEMORY.md must still appear in list() output. The Provider does
+        not own the index — it cannot rely on the index being current."""
         provider = VaultProvider(vault_root=vault)
-        p1 = Path(provider.put(_make_entry("project", name="a", subject="foo")))
-        p2 = Path(provider.put(_make_entry("feedback", name="b", subject="foo")))
+        provider.put(_make_entry("project", name="indexed", subject="foo"))
+        provider.put(_make_entry("feedback", name="unindexed", subject="foo"))
+        # MEMORY.md contains only one of the two entries on disk.
+        p_indexed = next((vault / "10-projects" / "foo" / "project").glob("*.md"))
         _write_index(
             vault,
-            [
-                f"- [[{p1.relative_to(vault)}|a]] {SEP} type:project subject:foo {SEP} d",
-                f"- [[{p2.relative_to(vault)}|b]] {SEP} type:feedback subject:foo {SEP} d",
-            ],
+            [f"- [[{p_indexed.relative_to(vault)}|indexed]] "
+             f"{SEP} type:project subject:foo {SEP} d"],
         )
 
-        result = provider.list(type="feedback")
-        assert [e.name for e in result] == ["b"]
+        names = sorted(e.name for e in provider.list())
+        assert names == ["indexed", "unindexed"]
 
-    def test_list_falls_back_to_scan_when_index_missing(self, vault: Path) -> None:
+
+
+# ---------------------------------------------------------------------------
+# VaultProvider — logical-entry collision (cross-date)
+# ---------------------------------------------------------------------------
+
+
+class TestVaultProviderCrossDayCollision:
+    def test_put_same_name_type_raises_even_across_dates(
+        self, vault: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two puts with identical (name, type) on different days must
+        collide. Before the fix, day-2 silently created a second file
+        because the date-stamped filename differed."""
+        import datetime as _dt
+
         provider = VaultProvider(vault_root=vault)
-        provider.put(_make_entry("project", name="a", subject="foo"))
-        provider.put(_make_entry("feedback", name="b", subject="foo"))
-        assert not (vault / "MEMORY.md").exists()
 
-        names = sorted(e.name for e in provider.list(type="feedback"))
-        assert names == ["b"]
+        class _FrozenDate(_dt.date):
+            _today = _dt.date(2026, 1, 1)
+            @classmethod
+            def today(cls):
+                return cls._today
+
+        monkeypatch.setattr("providers.vault.date", _FrozenDate)
+        provider.put(_make_entry("project", name="x", subject="foo"))
+
+        _FrozenDate._today = _dt.date(2026, 1, 2)
+        with pytest.raises(MemoryCollisionError):
+            provider.put(_make_entry("project", name="x", subject="foo"))
+
+    def test_put_same_name_different_type_allowed(self, vault: Path) -> None:
+        """Collision is on (name, type), not on name alone — different
+        types with the same name are independent entries."""
+        provider = VaultProvider(vault_root=vault)
+        provider.put(_make_entry("project", name="x", subject="foo"))
+        # Should not raise; same name, different type.
+        provider.put(_make_entry("feedback", name="x", subject="foo"))

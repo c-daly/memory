@@ -171,40 +171,18 @@ class VaultProvider(Provider):
                 return full if full.is_file() else None
         return None
 
-    def _index_iter(self, type: str | None, subject: str | None):
-        """Yield (abs_path, indexed_type, indexed_subject) for filter matches.
-
-        The caller is responsible for reading and parsing each file; this
-        method only narrows the candidate set using the index metadata, so
-        a `type=feedback` query in a 50k-entry vault touches only the
-        feedback files on disk.
-        """
-        idx = self._index_path()
-        if not idx.is_file():
-            return
-        try:
-            text = idx.read_text(encoding="utf-8")
-        except OSError:
-            return
-        for line in text.splitlines():
-            m = self._INDEX_BULLET_RE.match(line)
-            if m is None:
-                continue
-            t = m.group("type")
-            s = m.group("subject")
-            if type is not None and t != type:
-                continue
-            if subject is not None and s != subject:
-                continue
-            full = self.vault_root / m.group("path")
-            if full.is_file():
-                yield full
-
-    # -- Provider API ----------------------------------------------------
-
     # -- Provider API ----------------------------------------------------
 
     def put(self, entry: Entry) -> str:
+        # Logical-entry collision: an entry with the same (name, type)
+        # may already exist under a different date-stamped filename.
+        # Without this check, day-N put() succeeds while day-1 still
+        # exists, leaving two files for one logical entry and making
+        # exists()/get() nondeterministic.
+        if self.exists(entry.name, entry.type):
+            raise MemoryCollisionError(
+                path=f"<{entry.type}:{entry.name}> already exists in vault"
+            )
         target = self._resolve_placement(entry)
         if target.exists():
             raise MemoryCollisionError(path=str(target))
@@ -250,18 +228,12 @@ class VaultProvider(Provider):
         type: str | None = None,
         subject: str | None = None,
     ) -> list[Entry]:
-        if self._index_path().is_file():
-            results: list[Entry] = []
-            for path in self._index_iter(type=type, subject=subject):
-                try:
-                    entry = self._parse(path.read_text(encoding="utf-8"))
-                except OSError:
-                    continue
-                if entry is not None:
-                    results.append(entry)
-            return results
-        # No index — fall back to full scan
-        results = []
+        # Always scan, never trust the index alone: a Provider direct-put
+        # (tests, alternate writers) doesn't update MEMORY.md, so an
+        # index-only list() would silently drop those entries. list() is
+        # inherently O(matching_entries); the win that motivated the
+        # fast path was get()'s O(N) — that one stays index-backed.
+        results: list[Entry] = []
         for _, entry in self._iter_entries():
             if type is not None and entry.type != type:
                 continue
