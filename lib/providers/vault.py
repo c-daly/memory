@@ -133,6 +133,75 @@ class VaultProvider(Provider):
             body=body,
         )
 
+    # -- index-backed fast path (MEMORY.md) ------------------------------
+
+    # Format owned by lib/index.py in the writer/reader layer; kept here as
+    # the read-side contract so VaultProvider can answer get/list without
+    # rglob-ing the entire vault. SEP and bullet shape match index.py.
+    _INDEX_SEP = "\u00b7"
+    _INDEX_BULLET_RE = re.compile(
+        r"^- \[\[(?P<path>[^|\]]+)\|(?P<name>[^\]]+)\]\]"
+        + r"\s+\u00b7\s+type:(?P<type>\S+)\s+subject:(?P<subject>\S+)"
+        + r"\s+\u00b7\s+"
+    )
+
+    def _index_path(self) -> Path:
+        return self.vault_root / "MEMORY.md"
+
+    def _index_lookup_path(self, name: str, type: str) -> Path | None:
+        """Return absolute path for (name, type) via MEMORY.md, or None.
+
+        None means either MEMORY.md is missing, the entry is not indexed,
+        or the indexed file no longer exists on disk; in any of those
+        cases the caller should fall back to the full scan.
+        """
+        idx = self._index_path()
+        if not idx.is_file():
+            return None
+        try:
+            text = idx.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        for line in text.splitlines():
+            m = self._INDEX_BULLET_RE.match(line)
+            if m is None:
+                continue
+            if m.group("name") == name and m.group("type") == type:
+                full = self.vault_root / m.group("path")
+                return full if full.is_file() else None
+        return None
+
+    def _index_iter(self, type: str | None, subject: str | None):
+        """Yield (abs_path, indexed_type, indexed_subject) for filter matches.
+
+        The caller is responsible for reading and parsing each file; this
+        method only narrows the candidate set using the index metadata, so
+        a `type=feedback` query in a 50k-entry vault touches only the
+        feedback files on disk.
+        """
+        idx = self._index_path()
+        if not idx.is_file():
+            return
+        try:
+            text = idx.read_text(encoding="utf-8")
+        except OSError:
+            return
+        for line in text.splitlines():
+            m = self._INDEX_BULLET_RE.match(line)
+            if m is None:
+                continue
+            t = m.group("type")
+            s = m.group("subject")
+            if type is not None and t != type:
+                continue
+            if subject is not None and s != subject:
+                continue
+            full = self.vault_root / m.group("path")
+            if full.is_file():
+                yield full
+
+    # -- Provider API ----------------------------------------------------
+
     # -- Provider API ----------------------------------------------------
 
     def put(self, entry: Entry) -> str:
@@ -159,6 +228,15 @@ class VaultProvider(Provider):
                 yield path, entry
 
     def get(self, name: str, type: str) -> Entry | None:
+        path = self._index_lookup_path(name, type)
+        if path is not None:
+            try:
+                entry = self._parse(path.read_text(encoding="utf-8"))
+            except OSError:
+                entry = None
+            if entry is not None and entry.name == name and entry.type == type:
+                return entry
+            # indexed file failed to parse cleanly; fall through to scan
         for _, entry in self._iter_entries():
             if entry.name == name and entry.type == type:
                 return entry
@@ -172,7 +250,18 @@ class VaultProvider(Provider):
         type: str | None = None,
         subject: str | None = None,
     ) -> list[Entry]:
-        results: list[Entry] = []
+        if self._index_path().is_file():
+            results: list[Entry] = []
+            for path in self._index_iter(type=type, subject=subject):
+                try:
+                    entry = self._parse(path.read_text(encoding="utf-8"))
+                except OSError:
+                    continue
+                if entry is not None:
+                    results.append(entry)
+            return results
+        # No index — fall back to full scan
+        results = []
         for _, entry in self._iter_entries():
             if type is not None and entry.type != type:
                 continue

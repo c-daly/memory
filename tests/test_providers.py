@@ -237,3 +237,90 @@ class TestVaultProviderPlacement:
             provider.put(_make_entry("project", name="x", subject="foo"))
         )
         assert written.is_relative_to(tmp_path)
+
+# ---------------------------------------------------------------------------
+# VaultProvider — index-backed fast path (MEMORY.md)
+# ---------------------------------------------------------------------------
+
+
+SEP = "·"
+
+
+def _write_index(vault: Path, bullets: list[str]) -> None:
+    (vault / "MEMORY.md").write_text(
+        "# MEMORY\n\n" + "\n".join(bullets) + "\n", encoding="utf-8"
+    )
+
+
+class TestVaultProviderIndexFastPath:
+    def test_get_uses_index_when_present(self, vault: Path) -> None:
+        provider = VaultProvider(vault_root=vault)
+        written = Path(
+            provider.put(_make_entry("project", name="alpha", subject="foo"))
+        )
+        rel = written.relative_to(vault)
+        _write_index(
+            vault,
+            [f"- [[{rel}|alpha]] {SEP} type:project subject:foo {SEP} desc"],
+        )
+        # Hide every other .md from the scanner to prove the index path
+        # is what answered: if get() were still scanning, it'd find nothing.
+        decoy_dir = vault / "10-projects" / "foo" / "project"
+        for p in decoy_dir.glob("*.md"):
+            if p != written:
+                p.unlink()
+
+        entry = provider.get("alpha", "project")
+        assert entry is not None
+        assert entry.name == "alpha"
+        assert entry.type == "project"
+
+    def test_get_falls_back_to_scan_when_index_missing(self, vault: Path) -> None:
+        provider = VaultProvider(vault_root=vault)
+        provider.put(_make_entry("project", name="beta", subject="foo"))
+        assert not (vault / "MEMORY.md").exists()
+
+        entry = provider.get("beta", "project")
+        assert entry is not None and entry.name == "beta"
+
+    def test_get_falls_back_when_indexed_path_missing(self, vault: Path) -> None:
+        """Stale index pointing at a deleted file falls through to scan."""
+        provider = VaultProvider(vault_root=vault)
+        written = Path(
+            provider.put(_make_entry("project", name="gamma", subject="foo"))
+        )
+        _write_index(
+            vault,
+            [f"- [[10-projects/foo/project/9999-99-99-ghost.md|gamma]] "
+             f"{SEP} type:project subject:foo {SEP} stale"],
+        )
+
+        entry = provider.get("gamma", "project")
+        assert entry is not None
+        assert entry.name == "gamma"
+        # Sanity: the real file is what we got back
+        assert (vault / written.relative_to(vault)).is_file()
+
+    def test_list_filters_via_index(self, vault: Path) -> None:
+        provider = VaultProvider(vault_root=vault)
+        p1 = Path(provider.put(_make_entry("project", name="a", subject="foo")))
+        p2 = Path(provider.put(_make_entry("feedback", name="b", subject="foo")))
+        _write_index(
+            vault,
+            [
+                f"- [[{p1.relative_to(vault)}|a]] {SEP} type:project subject:foo {SEP} d",
+                f"- [[{p2.relative_to(vault)}|b]] {SEP} type:feedback subject:foo {SEP} d",
+            ],
+        )
+
+        result = provider.list(type="feedback")
+        assert [e.name for e in result] == ["b"]
+
+    def test_list_falls_back_to_scan_when_index_missing(self, vault: Path) -> None:
+        provider = VaultProvider(vault_root=vault)
+        provider.put(_make_entry("project", name="a", subject="foo"))
+        provider.put(_make_entry("feedback", name="b", subject="foo"))
+        assert not (vault / "MEMORY.md").exists()
+
+        names = sorted(e.name for e in provider.list(type="feedback"))
+        assert names == ["b"]
