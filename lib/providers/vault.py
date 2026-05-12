@@ -45,6 +45,10 @@ class VaultProvider(Provider):
             env = os.environ.get("MEMORY_VAULT_DIR")
             vault_root = Path(env) if env else Path.home() / "projects" / "vault"
         self.vault_root = Path(vault_root)
+        # Alias for the substrate-agnostic Provider.root attribute that
+        # callers (e.g. memory_writer) rely on to align their index-write
+        # location with the provider's actual storage root.
+        self.root = self.vault_root
 
     # -- placement (the v1 filing rule; isolated for v2 swap-in) ---------
 

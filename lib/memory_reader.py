@@ -55,11 +55,16 @@ def list(type: str | None = None, subject: str | None = None) -> "list[Entry]": 
     vault_root = _resolve_vault_root()
     entries = index.read(vault_root)
     if not entries:
-        memory_md = vault_root / "MEMORY.md"
-        if not memory_md.exists():
-            log.warning("MEMORY.md missing at %s; rebuilding from filesystem scan", memory_md)
-            index.rebuild_from_scan(vault_root)
-            entries = index.read(vault_root)
+        # Docstring contract: fall back to rebuild whenever the index is
+        # *missing or empty*. The previous \`if not memory_md.exists()\`
+        # guard only covered the missing case — a header-only or
+        # truncated MEMORY.md silently returned an empty list.
+        log.warning(
+            "MEMORY.md missing or empty at %s; rebuilding from filesystem scan",
+            vault_root / "MEMORY.md",
+        )
+        index.rebuild_from_scan(vault_root)
+        entries = index.read(vault_root)
     result: "list[Entry]" = []
     for ie in entries:
         if type is not None and ie.type != type:
@@ -74,10 +79,24 @@ def list(type: str | None = None, subject: str | None = None) -> "list[Entry]": 
 
 
 def get(name: str, type: str) -> Entry | None:  # noqa: A002
-    """Look up an entry by (name, type) via the index; return parsed Entry or None."""
+    """Look up an entry by (name, type) via the index; return parsed Entry or None.
+
+    Honors the module-level contract: if MEMORY.md is missing or empty,
+    rebuild from a filesystem scan once and retry the lookup. A miss on
+    a non-empty index is treated as a real miss and *not* re-scanned —
+    only missing/empty index triggers fallback.
+    """
     vault_root = _resolve_vault_root()
     rel = index.lookup(vault_root, name, type)
     if rel is None:
-        return None
+        if not index.read(vault_root):
+            log.warning(
+                "MEMORY.md missing or empty at %s; rebuilding from filesystem scan",
+                vault_root / "MEMORY.md",
+            )
+            index.rebuild_from_scan(vault_root)
+            rel = index.lookup(vault_root, name, type)
+        if rel is None:
+            return None
     full = vault_root / rel
     return _parse_entry_file(full)

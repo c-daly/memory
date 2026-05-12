@@ -190,3 +190,83 @@ def test_malformed_bullet_is_skipped(vault: Path) -> None:
     entries = memory_reader.list()
     assert len(entries) == 3
     assert sorted(e.name for e in entries) == ["alice", "alice-pref", "plan"]
+
+
+def test_list_rebuilds_when_memory_md_exists_but_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per the module docstring, list() falls back to rebuild when the
+    index is missing or empty. A header-only MEMORY.md must trigger the
+    rebuild — the previous .exists() guard skipped this case."""
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    # Create an entry on disk but NO matching index entry.
+    (tmp_path / "10-projects" / "foo" / "project").mkdir(parents=True)
+    (tmp_path / "10-projects" / "foo" / "project" / "2026-05-12-orphan.md").write_text(
+        "---\n"
+        "name: orphan\n"
+        "description: only on disk\n"
+        "type: project\n"
+        "subject: foo\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    # Header-only MEMORY.md — exists, but has no bullets.
+    (tmp_path / "MEMORY.md").write_text(
+        "# MEMORY\n\nAuto-maintained.\n\n", encoding="utf-8"
+    )
+
+    result = memory_reader.list()
+    assert [e.name for e in result] == ["orphan"]
+
+
+def test_get_rebuilds_when_memory_md_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Per the module docstring, get() falls back to rebuild on
+    missing/empty index. Previously get() returned None unconditionally."""
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    (tmp_path / "10-projects" / "foo" / "project").mkdir(parents=True)
+    (tmp_path / "10-projects" / "foo" / "project" / "2026-05-12-needle.md").write_text(
+        "---\n"
+        "name: needle\n"
+        "description: findable via rebuild\n"
+        "type: project\n"
+        "subject: foo\n"
+        "---\n"
+        "body\n",
+        encoding="utf-8",
+    )
+    # No MEMORY.md at all.
+    assert not (tmp_path / "MEMORY.md").exists()
+
+    entry = memory_reader.get("needle", "project")
+    assert entry is not None
+    assert entry.name == "needle"
+
+
+def test_get_does_not_rebuild_on_real_miss(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the index has entries but doesn't contain the requested
+    (name, type), that's a real miss — don't waste a rebuild scan."""
+    import unittest.mock as mock
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    # Seed the index with an unrelated entry so it's non-empty.
+    (tmp_path / "10-projects" / "foo" / "project").mkdir(parents=True)
+    real_path = tmp_path / "10-projects" / "foo" / "project" / "2026-05-12-other.md"
+    real_path.write_text(
+        "---\nname: other\ndescription: d\ntype: project\nsubject: foo\n---\nb\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "MEMORY.md").write_text(
+        "# MEMORY\n\n"
+        f"- [[10-projects/foo/project/2026-05-12-other.md|other]] · "
+        f"type:project subject:foo · d\n",
+        encoding="utf-8",
+    )
+
+    with mock.patch("index.rebuild_from_scan") as rebuild:
+        entry = memory_reader.get("missing", "project")
+    assert entry is None
+    rebuild.assert_not_called()

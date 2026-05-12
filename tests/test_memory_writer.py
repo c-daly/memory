@@ -191,3 +191,34 @@ def test_write_subject_with_slash_allowed(
         provider=provider,
     )
     assert path
+
+
+def test_write_uses_provider_root_not_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When a custom provider is injected, MEMORY.md must be written
+    inside that provider's root — not at the env-configured vault.
+
+    Previously memory_writer re-resolved vault_root from MEMORY_VAULT_DIR
+    independently, so the bullet landed at the env path while the entry
+    file lived at the provider's path: silent index/storage misalignment.
+    """
+    env_vault = tmp_path / "env-vault"
+    env_vault.mkdir()
+    provider_root = tmp_path / "actual-root"
+    provider_root.mkdir()
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(env_vault))
+
+    provider = FilesystemProvider(root=provider_root)
+    memory_writer.write(
+        name="x",
+        description="d",
+        type="project",
+        subject="foo",
+        body="b",
+        provider=provider,
+    )
+
+    # Bullet must be in the provider's root, NOT in the env-configured one.
+    assert (provider_root / "MEMORY.md").is_file()
+    assert not (env_vault / "MEMORY.md").exists()

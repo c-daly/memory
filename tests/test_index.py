@@ -151,3 +151,28 @@ def test_rebuild_from_scan_skips_body_bytes(tmp_path: Path) -> None:
 
     count = index.rebuild_from_scan(tmp_path)
     assert count == 1
+
+
+def test_read_frontmatter_only_handles_crlf(tmp_path: Path) -> None:
+    """Windows-style CRLF line endings must not break delimiter detection.
+
+    Previously rstrip('\\n') left a trailing '\\r' on the '---' lines,
+    causing the equality check to fail and the file to be silently
+    skipped by rebuild_from_scan.
+    """
+    (tmp_path / "10-projects" / "foo" / "project").mkdir(parents=True)
+    crlf_file = tmp_path / "10-projects" / "foo" / "project" / "2026-05-12-crlf.md"
+    crlf_file.write_bytes(
+        b"---\r\n"
+        b"name: crlf\r\n"
+        b"description: windows line endings\r\n"
+        b"type: project\r\n"
+        b"subject: foo\r\n"
+        b"---\r\n"
+        b"body\r\n"
+    )
+
+    count = index.rebuild_from_scan(tmp_path)
+    assert count == 1
+    parsed = index.read(tmp_path)
+    assert parsed[0].name == "crlf"

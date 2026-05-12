@@ -188,10 +188,10 @@ def _read_frontmatter_only(path: Path) -> str | None:
                 except UnicodeDecodeError:
                     return None
                 if not head_lines:
-                    if line.rstrip("\n") != "---":
+                    if line.rstrip("\r\n") != "---":
                         return None
                 else:
-                    if line.rstrip("\n") == "---":
+                    if line.rstrip("\r\n") == "---":
                         head_lines.append(line)
                         return "".join(head_lines)
                 head_lines.append(line)

@@ -79,7 +79,13 @@ def write(
         )
 
     provider = provider if provider is not None else _get_provider()
-    vault_root = _resolve_vault_root()
+    # Always source vault_root from the provider, not from the env, so an
+    # injected provider with a custom root keeps its index file and entry
+    # files in the same directory tree. Previously memory_writer pulled
+    # vault_root from MEMORY_VAULT_DIR independently, which silently
+    # misaligned index and storage when a caller passed a provider with
+    # a different root.
+    vault_root = Path(provider.root)
 
     entry = Entry(
         name=name,
