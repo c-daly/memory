@@ -62,8 +62,44 @@ def write(
         if not val or not val.strip():
             raise ValueError(f"{field_name} is required")
 
+    # The MEMORY.md bullet format embeds every field verbatim on a
+    # single line, with this shape:
+    #   - [[<path>|<name>]] · type:T subject:S · <description>
+    # A field containing a character that conflicts with the format
+    # produces a bullet that the parser silently skips — put() succeeds
+    # but the entry never appears in list()/get() results.
+    #
+    # Reject the conflicting characters at the writer (the only
+    # supported entry point) so a malformed entry never reaches the
+    # index.
+    if any(c in name for c in "]|\r\n"):
+        raise ValueError(
+            f"name must not contain ']', '|', or newline characters "
+            f"(they break the [[path|name]] bullet link); got {name!r}"
+        )
+    if "\r" in description or "\n" in description:
+        raise ValueError(
+            f"description must not contain newline characters "
+            f"(bullets are one line each); got {description!r}"
+        )
+    if any(c.isspace() for c in subject):
+        raise ValueError(
+            f"subject must not contain whitespace; got {subject!r}"
+        )
+    if "\u00b7" in subject:
+        raise ValueError(
+            f"subject must not contain the index separator '\u00b7'; "
+            f"got {subject!r}"
+        )
+
     provider = provider if provider is not None else _get_provider()
-    vault_root = _resolve_vault_root()
+    # Always source vault_root from the provider, not from the env, so an
+    # injected provider with a custom root keeps its index file and entry
+    # files in the same directory tree. Previously memory_writer pulled
+    # vault_root from MEMORY_VAULT_DIR independently, which silently
+    # misaligned index and storage when a caller passed a provider with
+    # a different root.
+    vault_root = Path(provider.root)
 
     entry = Entry(
         name=name,
