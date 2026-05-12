@@ -19,5 +19,5 @@ venv/
 *.swp
 .DS_Store
 
-# Local-only (synced to vault, not tracked here)
-.claude/decisions/.gitkeep
+# Plans and decisions live in the vault (source of truth); .claude/ is local-only
+.claude/
