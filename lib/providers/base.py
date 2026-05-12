@@ -33,22 +33,25 @@ class Entry:
     def to_markdown(self) -> str:
         """Render this Entry as a YAML-frontmatter markdown document.
 
-        The output is itself a valid memory file: the body is normalized
-        to end with a newline, and the frontmatter is written in the
-        canonical name/description/type/subject order so that piping
-        get() into a file and replaying it through write() round-trips
-        cleanly.
+        Frontmatter is serialized via yaml.safe_dump so values that
+        would otherwise break naive interpolation (e.g. a description
+        containing '#' which YAML treats as a comment, or ':' which
+        starts a key, or embedded newlines) round-trip correctly.
+
+        The body is normalized to end with a newline so the output is
+        itself a valid memory file: piping get() into a file and
+        replaying it through write() round-trips the entry.
         """
+        import yaml as _yaml
+        frontmatter = {
+            "name": self.name,
+            "description": self.description,
+            "type": self.type,
+            "subject": self.subject,
+        }
+        fm_text = _yaml.safe_dump(frontmatter, sort_keys=False).strip()
         body = self.body if self.body.endswith("\n") else self.body + "\n"
-        return (
-            "---\n"
-            f"name: {self.name}\n"
-            f"description: {self.description}\n"
-            f"type: {self.type}\n"
-            f"subject: {self.subject}\n"
-            "---\n"
-            f"{body}"
-        )
+        return f"---\n{fm_text}\n---\n{body}"
 
 
 class MemoryCollisionError(Exception):

@@ -131,17 +131,6 @@ class VaultProvider(Provider):
     # -- serialization ---------------------------------------------------
 
     @staticmethod
-    def _serialize(entry: Entry) -> str:
-        frontmatter = {
-            "name": entry.name,
-            "description": entry.description,
-            "type": entry.type,
-            "subject": entry.subject,
-        }
-        fm_text = yaml.safe_dump(frontmatter, sort_keys=False).strip()
-        return f"---\n{fm_text}\n---\n{entry.body}"
-
-    @staticmethod
     def _parse(text: str) -> Entry | None:
         """Parse a memory file. Return None if it's not a valid memory entry.
 
@@ -234,7 +223,7 @@ class VaultProvider(Provider):
         if target.exists():
             raise MemoryCollisionError(path=str(target))
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(self._serialize(entry), encoding="utf-8")
+        target.write_text(entry.to_markdown(), encoding="utf-8")
         return str(target)
 
     def _iter_entries(self):

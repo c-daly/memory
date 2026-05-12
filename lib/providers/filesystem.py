@@ -84,14 +84,7 @@ class FilesystemProvider(Provider):
         target = self.root / f"{date}-{entry.type}-{slug}.md"
         if target.exists():
             raise MemoryCollisionError(path=str(target))
-        meta = {
-            "name": entry.name,
-            "description": entry.description,
-            "type": entry.type,
-            "subject": entry.subject,
-        }
-        frontmatter = yaml.safe_dump(meta, sort_keys=False).rstrip("\n")
-        target.write_text(f"---\n{frontmatter}\n---\n{entry.body}", encoding="utf-8")
+        target.write_text(entry.to_markdown(), encoding="utf-8")
         return str(target)
 
     def get(self, name: str, type: str) -> Entry | None:

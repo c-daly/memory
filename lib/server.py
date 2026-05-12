@@ -23,14 +23,22 @@ mcp = FastMCP("memory")
 def memory_write(
     type: str, name: str, subject: str, description: str, body: str
 ) -> str:
-    """Write a memory entry. Returns the stored path."""
-    return memory_writer.write(
-        name=name,
-        description=description,
-        type=type,
-        subject=subject,
-        body=body,
-    )
+    """Write a memory entry. Returns the stored path, or 'error: ...' on a
+    business-validation failure (matches the CLI's contract so MCP
+    clients see the same one-line error format as shell callers, not a
+    raw traceback wrapped by FastMCP).
+    """
+    from providers.base import MemoryAmbiguousSubjectError, MemoryCollisionError
+    try:
+        return memory_writer.write(
+            name=name,
+            description=description,
+            type=type,
+            subject=subject,
+            body=body,
+        )
+    except (ValueError, MemoryCollisionError, MemoryAmbiguousSubjectError) as exc:
+        return f"error: {exc}"
 
 
 @mcp.tool()

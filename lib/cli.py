@@ -25,7 +25,6 @@ import index  # noqa: E402
 import memory_reader  # noqa: E402
 import memory_writer  # noqa: E402
 from providers.base import (  # noqa: E402
-    Entry,
     MemoryAmbiguousSubjectError,
     MemoryCollisionError,
 )
