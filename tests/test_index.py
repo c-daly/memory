@@ -124,3 +124,30 @@ def test_rebuild_from_scan(tmp_path: Path) -> None:
 
     text = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
     assert text.startswith("# MEMORY\n")
+
+
+def test_rebuild_from_scan_skips_body_bytes(tmp_path: Path) -> None:
+    """Bodies aren't needed to (re)build MEMORY.md — only frontmatter is.
+
+    Behavioral guard: write a file whose body contains non-UTF-8 bytes.
+    A head-only reader stops at the closing '---' and never decodes the
+    body, so the file is indexed normally. A full-file reader hits
+    UnicodeDecodeError on the body and the file is silently skipped
+    (resulting in count == 0 here).
+    """
+    (tmp_path / "10-projects" / "foo" / "project").mkdir(parents=True)
+    bad_file = tmp_path / "10-projects" / "foo" / "project" / "2026-05-12-bad.md"
+    frontmatter = (
+        "---\n"
+        "name: bad\n"
+        "description: body has bad bytes\n"
+        "type: project\n"
+        "subject: foo\n"
+        "---\n"
+    ).encode("utf-8")
+    # 0xff isn't valid UTF-8 anywhere; reading past the frontmatter
+    # would raise UnicodeDecodeError under encoding="utf-8".
+    bad_file.write_bytes(frontmatter + b"\xff\xff body bytes that won\'t decode")
+
+    count = index.rebuild_from_scan(tmp_path)
+    assert count == 1

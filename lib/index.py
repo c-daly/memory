@@ -169,8 +169,42 @@ def _parse_frontmatter(text: str) -> dict | None:
     return data
 
 
+def _read_frontmatter_only(path: Path) -> str | None:
+    """Read just the YAML frontmatter block from a markdown file.
+
+    Opens the file in binary mode and reads line-by-line, decoding each
+    line as UTF-8 on its own and stopping at the closing ``---``. A
+    multi-megabyte entry body costs the same as a small one — the body
+    bytes are never read, never decoded. Returns the head text up to
+    and including the closing delimiter, or None if the file isn't
+    frontmatter-shaped or the head isn't valid UTF-8.
+    """
+    try:
+        with path.open("rb") as fp:
+            head_lines: list[str] = []
+            for raw in fp:
+                try:
+                    line = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    return None
+                if not head_lines:
+                    if line.rstrip("\n") != "---":
+                        return None
+                else:
+                    if line.rstrip("\n") == "---":
+                        head_lines.append(line)
+                        return "".join(head_lines)
+                head_lines.append(line)
+            return None  # opening "---" but no closing delimiter
+    except OSError:
+        return None
+
+
 def rebuild_from_scan(vault_root: Path) -> int:
     """Walk vault_root recursively; rebuild MEMORY.md from .md files with all 4 fields.
+
+    Per-file cost is O(frontmatter_size), not O(file_size): we stream
+    only the head of each markdown file via _read_frontmatter_only.
 
     Returns the count of indexed entries.
     """
@@ -180,11 +214,10 @@ def rebuild_from_scan(vault_root: Path) -> int:
     for md_path in sorted(vault_root.rglob("*.md")):
         if md_path.resolve() == _index_path(vault_root).resolve():
             continue
-        try:
-            text = md_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        head = _read_frontmatter_only(md_path)
+        if head is None:
             continue
-        fm = _parse_frontmatter(text)
+        fm = _parse_frontmatter(head)
         if not fm:
             continue
         name = fm.get("name")
