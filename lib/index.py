@@ -1,0 +1,260 @@
+"""MEMORY.md index module.
+
+Self-contained; owns the MEMORY.md format and operations on it.
+No imports from providers.
+
+MEMORY.md bullet format (one per line):
+    - [[<path>|<name>]] SEP type:<T> subject:<S> SEP <description>
+
+Where SEP is U+00B7 (middle dot). <path> is relative to vault_root.
+"""
+from __future__ import annotations
+
+import os
+import re
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+import yaml
+
+INDEX_FILENAME = "MEMORY.md"
+INDEX_HEADER = (
+    "# MEMORY\n\n"
+    "Auto-maintained by memory_writer. One bullet per entry. Do not hand-edit.\n\n"
+)
+
+_SEP = "\u00b7"
+
+_BULLET_RE = re.compile(
+    r"^- \[\[(?P<path>[^|\]]+)\|(?P<name>[^\]]+)\]\]"
+    + r"\s+" + re.escape(_SEP) + r"\s+type:(?P<type>\S+)\s+subject:(?P<subject>\S+)"
+    + r"\s+" + re.escape(_SEP) + r"\s+(?P<description>.*)$"
+)
+
+
+@dataclass
+class IndexEntry:
+    name: str
+    type: str
+    subject: str
+    path: str
+    description: str
+
+
+def _index_path(vault_root: Path) -> Path:
+    return Path(vault_root) / INDEX_FILENAME
+
+
+def _format_bullet(entry: IndexEntry) -> str:
+    return (
+        f"- [[{entry.path}|{entry.name}]] {_SEP} "
+        f"type:{entry.type} subject:{entry.subject} {_SEP} {entry.description}"
+    )
+
+
+def _atomic_write(target: Path, text: str) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=target.name + ".", suffix=".tmp", dir=str(target.parent)
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp_name, target)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def read(vault_root: Path) -> list[IndexEntry]:
+    """Parse <vault_root>/MEMORY.md. Return [] if missing or unreadable.
+
+    Skips malformed lines silently. If MEMORY.md itself is corrupt (e.g.
+    non-UTF-8 bytes from a partial write or hand-edit), returns [] so
+    that the reader's missing-or-empty fallback drives a rebuild —
+    same recovery shape as the missing-file case.
+    """
+    path = _index_path(vault_root)
+    if not path.exists():
+        return []
+    entries: list[IndexEntry] = []
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.rstrip("\n")
+                if not line.startswith("- [["):
+                    continue
+                m = _BULLET_RE.match(line)
+                if not m:
+                    continue
+                entries.append(
+                    IndexEntry(
+                        name=m.group("name").strip(),
+                        type=m.group("type").strip(),
+                        subject=m.group("subject").strip(),
+                        path=m.group("path").strip(),
+                        description=m.group("description").strip(),
+                    )
+                )
+    except (OSError, UnicodeDecodeError):
+        return []
+    return entries
+
+
+def append(
+    vault_root: Path,
+    name: str,
+    type: str,
+    subject: str,
+    path: str,
+    description: str,
+) -> None:
+    """Append a bullet line for the new entry; create MEMORY.md with header if missing.
+
+    `path` is relative to vault_root. Write is atomic (tempfile + os.replace).
+    """
+    index_file = _index_path(vault_root)
+    entry = IndexEntry(
+        name=name, type=type, subject=subject, path=path, description=description
+    )
+    bullet = _format_bullet(entry)
+
+    if index_file.exists():
+        try:
+            existing = index_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            # MEMORY.md is unreadable (corrupt bytes, partial write, etc).
+            # rebuild_from_scan walks the vault from disk; the entry file
+            # was just written by provider.put(), so it'll be picked up
+            # and the resulting MEMORY.md will already include this
+            # entry's bullet. Nothing more to append.
+            rebuild_from_scan(vault_root)
+            return
+        if existing and not existing.endswith("\n"):
+            existing += "\n"
+        new_text = existing + bullet + "\n"
+    else:
+        new_text = INDEX_HEADER + bullet + "\n"
+
+    _atomic_write(index_file, new_text)
+
+
+def lookup(vault_root: Path, name: str, type: str) -> str | None:
+    """Return the path of the IndexEntry matching (name, type), else None."""
+    for entry in read(vault_root):
+        if entry.name == name and entry.type == type:
+            return entry.path
+    return None
+
+
+def lookup_subject(vault_root: Path, subject: str) -> str | None:
+    """Return folder (parent of entry path) for any IndexEntry whose subject matches, else None.
+
+    Serves as the subject-resolution cache for memory_writer.
+    """
+    for entry in read(vault_root):
+        if entry.subject == subject:
+            parent = str(Path(entry.path).parent)
+            return parent if parent not in ("", ".") else ""
+    return None
+
+
+def _parse_frontmatter(text: str) -> dict | None:
+    """Parse YAML frontmatter from a Markdown file content. Return dict or None."""
+    if not text.startswith("---"):
+        return None
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end = i
+            break
+    if end is None:
+        return None
+    fm_text = "\n".join(lines[1:end])
+    try:
+        data = yaml.safe_load(fm_text)
+    except yaml.YAMLError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _read_frontmatter_only(path: Path) -> str | None:
+    """Read just the YAML frontmatter block from a markdown file.
+
+    Opens the file in binary mode and reads line-by-line, decoding each
+    line as UTF-8 on its own and stopping at the closing ``---``. A
+    multi-megabyte entry body costs the same as a small one — the body
+    bytes are never read, never decoded. Returns the head text up to
+    and including the closing delimiter, or None if the file isn't
+    frontmatter-shaped or the head isn't valid UTF-8.
+    """
+    try:
+        with path.open("rb") as fp:
+            head_lines: list[str] = []
+            for raw in fp:
+                try:
+                    line = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    return None
+                if not head_lines:
+                    if line.rstrip("\r\n") != "---":
+                        return None
+                else:
+                    if line.rstrip("\r\n") == "---":
+                        head_lines.append(line)
+                        return "".join(head_lines)
+                head_lines.append(line)
+            return None  # opening "---" but no closing delimiter
+    except OSError:
+        return None
+
+
+def rebuild_from_scan(vault_root: Path) -> int:
+    """Walk vault_root recursively; rebuild MEMORY.md from .md files with all 4 fields.
+
+    Per-file cost is O(frontmatter_size), not O(file_size): we stream
+    only the head of each markdown file via _read_frontmatter_only.
+
+    Returns the count of indexed entries.
+    """
+    vault_root = Path(vault_root)
+    entries: list[IndexEntry] = []
+
+    for md_path in sorted(vault_root.rglob("*.md")):
+        if md_path.resolve() == _index_path(vault_root).resolve():
+            continue
+        head = _read_frontmatter_only(md_path)
+        if head is None:
+            continue
+        fm = _parse_frontmatter(head)
+        if not fm:
+            continue
+        name = fm.get("name")
+        description = fm.get("description")
+        type_ = fm.get("type")
+        subject = fm.get("subject")
+        if not (name and description and type_ and subject):
+            continue
+        rel = md_path.relative_to(vault_root).as_posix()
+        entries.append(
+            IndexEntry(
+                name=str(name),
+                type=str(type_),
+                subject=str(subject),
+                path=rel,
+                description=str(description),
+            )
+        )
+
+    body = INDEX_HEADER + "".join(_format_bullet(e) + "\n" for e in entries)
+    _atomic_write(_index_path(vault_root), body)
+    return len(entries)

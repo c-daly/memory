@@ -473,3 +473,63 @@ class TestVaultProviderSubjectTraversal:
         )
         assert written.is_relative_to(vault)
         assert not any(outside.rglob("*.md"))
+
+
+# ---------------------------------------------------------------------------
+# Providers — non-UTF-8 body bytes don't crash get()/list()
+# ---------------------------------------------------------------------------
+
+
+class TestProvidersHandleNonUtf8Bytes:
+    def test_vault_get_skips_non_utf8_file(self, vault: Path) -> None:
+        """VaultProvider.get must skip a file with non-UTF-8 bytes, not raise."""
+        type_dir = vault / "10-projects" / "foo" / "project"
+        type_dir.mkdir(parents=True, exist_ok=True)
+        (type_dir / "2026-05-12-bad.md").write_bytes(
+            b"---\nname: bad\ndescription: d\ntype: project\nsubject: foo\n---\n"
+            + b"\xff\xff bad bytes"
+        )
+        provider = VaultProvider(vault_root=vault)
+        # Should return None gracefully — old behavior raised
+        # UnicodeDecodeError out of the get() call.
+        assert provider.get("bad", "project") is None
+
+    def test_vault_list_skips_non_utf8_file(self, vault: Path) -> None:
+        type_dir = vault / "10-projects" / "foo" / "project"
+        type_dir.mkdir(parents=True, exist_ok=True)
+        good = type_dir / "2026-05-12-good.md"
+        good.write_text(
+            "---\nname: good\ndescription: d\ntype: project\nsubject: foo\n---\nb\n",
+            encoding="utf-8",
+        )
+        (type_dir / "2026-05-12-bad.md").write_bytes(
+            b"---\nname: bad\ndescription: d\ntype: project\nsubject: foo\n---\n"
+            + b"\xff\xff bad bytes"
+        )
+        provider = VaultProvider(vault_root=vault)
+        names = sorted(e.name for e in provider.list())
+        assert names == ["good"]
+
+    def test_filesystem_list_skips_non_utf8_file(self, tmp_path: Path) -> None:
+        good = tmp_path / "2026-05-12-project-good.md"
+        good.write_text(
+            "---\nname: good\ndescription: d\ntype: project\nsubject: foo\n---\nb\n",
+            encoding="utf-8",
+        )
+        bad = tmp_path / "2026-05-12-project-bad.md"
+        bad.write_bytes(
+            b"---\nname: bad\ndescription: d\ntype: project\nsubject: foo\n---\n"
+            + b"\xff\xff bad bytes"
+        )
+        provider = FilesystemProvider(root=tmp_path)
+        names = sorted(e.name for e in provider.list())
+        assert names == ["good"]
+
+    def test_filesystem_get_skips_non_utf8_file(self, tmp_path: Path) -> None:
+        bad = tmp_path / "2026-05-12-project-bad.md"
+        bad.write_bytes(
+            b"---\nname: bad\ndescription: d\ntype: project\nsubject: foo\n---\n"
+            + b"\xff\xff bad bytes"
+        )
+        provider = FilesystemProvider(root=tmp_path)
+        assert provider.get("bad", "project") is None

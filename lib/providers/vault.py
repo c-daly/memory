@@ -45,6 +45,10 @@ class VaultProvider(Provider):
             env = os.environ.get("MEMORY_VAULT_DIR")
             vault_root = Path(env) if env else Path.home() / "projects" / "vault"
         self.vault_root = Path(vault_root)
+        # Alias for the substrate-agnostic Provider.root attribute that
+        # callers (e.g. memory_writer) rely on to align their index-write
+        # location with the provider's actual storage root.
+        self.root = self.vault_root
 
     # -- placement (the v1 filing rule; isolated for v2 swap-in) ---------
 
@@ -139,21 +143,33 @@ class VaultProvider(Provider):
 
     @staticmethod
     def _parse(text: str) -> Entry | None:
-        """Parse a memory file. Return None if it's not a valid memory entry."""
-        if not text.startswith("---\n"):
+        """Parse a memory file. Return None if it's not a valid memory entry.
+
+        Frontmatter is delimited by lines that are *only* '---'. The
+        previous text.split delimiter could fire inside the frontmatter
+        for any field whose value happened to end with '---' on a line
+        (yaml.safe_dump emits unquoted bare values directly, so a
+        description ending in '---' produces exactly that pattern).
+        """
+        lines = text.splitlines(keepends=True)
+        if not lines or lines[0].rstrip("\r\n") != "---":
+            return None
+        end = None
+        for i in range(1, len(lines)):
+            if lines[i].rstrip("\r\n") == "---":
+                end = i
+                break
+        if end is None:
             return None
         try:
-            _, fm_text, body = text.split("---\n", 2)
-        except ValueError:
-            return None
-        try:
-            data = yaml.safe_load(fm_text) or {}
+            data = yaml.safe_load("".join(lines[1:end])) or {}
         except yaml.YAMLError:
             return None
         if not isinstance(data, dict):
             return None
         if not all(k in data for k in _REQUIRED_FRONTMATTER):
             return None
+        body = "".join(lines[end + 1:])
         if body.startswith("\n"):
             body = body[1:]
         return Entry(
@@ -191,7 +207,7 @@ class VaultProvider(Provider):
             return None
         try:
             text = idx.read_text(encoding="utf-8")
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             return None
         for line in text.splitlines():
             m = self._INDEX_BULLET_RE.match(line)
@@ -230,7 +246,7 @@ class VaultProvider(Provider):
                 continue
             try:
                 text = path.read_text(encoding="utf-8")
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 continue
             entry = self._parse(text)
             if entry is not None:
@@ -241,7 +257,7 @@ class VaultProvider(Provider):
         if path is not None:
             try:
                 entry = self._parse(path.read_text(encoding="utf-8"))
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 entry = None
             if entry is not None and entry.name == name and entry.type == type:
                 return entry
