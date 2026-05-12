@@ -357,3 +357,30 @@ class TestVaultProviderCrossDayCollision:
         provider.put(_make_entry("project", name="x", subject="foo"))
         # Should not raise; same name, different type.
         provider.put(_make_entry("feedback", name="x", subject="foo"))
+
+
+# ---------------------------------------------------------------------------
+# FilesystemProvider — logical-entry collision (cross-date)
+# ---------------------------------------------------------------------------
+
+
+class TestFilesystemProviderCrossDayCollision:
+    def test_put_same_name_type_raises_even_across_dates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import datetime as _dt
+
+        provider = FilesystemProvider(root=tmp_path)
+
+        class _FrozenDate(_dt.date):
+            _today = _dt.date(2026, 1, 1)
+            @classmethod
+            def today(cls):
+                return cls._today
+
+        monkeypatch.setattr("providers.filesystem.datetime.date", _FrozenDate)
+        provider.put(_make_entry("project", name="x", subject="foo"))
+
+        _FrozenDate._today = _dt.date(2026, 1, 2)
+        with pytest.raises(MemoryCollisionError):
+            provider.put(_make_entry("project", name="x", subject="foo"))

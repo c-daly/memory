@@ -60,6 +60,14 @@ class FilesystemProvider(Provider):
 
     def put(self, entry: Entry) -> str:
         self.root.mkdir(parents=True, exist_ok=True)
+        # Logical-entry collision: an entry with the same (name, type)
+        # may already exist under a different date-stamped filename.
+        # Without this check, day-N put() succeeds while day-1 still
+        # exists, leaving two files for one logical entry.
+        if self.exists(entry.name, entry.type):
+            raise MemoryCollisionError(
+                path=f"<{entry.type}:{entry.name}> already exists in root"
+            )
         date = datetime.date.today().isoformat()
         slug = _kebab(entry.name)
         target = self.root / f"{date}-{entry.type}-{slug}.md"
