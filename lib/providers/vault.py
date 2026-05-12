@@ -147,7 +147,7 @@ class VaultProvider(Provider):
         """Yield (path, Entry) for every valid memory file under vault_root."""
         if not self.vault_root.is_dir():
             return
-        for path in self.vault_root.rglob("*.md"):
+        for path in sorted(self.vault_root.rglob("*.md")):
             if not path.is_file():
                 continue
             try:

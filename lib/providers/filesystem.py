@@ -44,7 +44,8 @@ def _parse(text: str) -> tuple[dict, str]:
     end = text.find("\n---\n", 4)
     if end == -1:
         return {}, text
-    meta = yaml.safe_load(text[4:end]) or {}
+    data = yaml.safe_load(text[4:end])
+    meta = data if isinstance(data, dict) else {}
     body = text[end + 5 :]
     return meta, body
 
@@ -71,7 +72,7 @@ class FilesystemProvider(Provider):
             "subject": entry.subject,
         }
         frontmatter = yaml.safe_dump(meta, sort_keys=False).rstrip("\n")
-        target.write_text(f"---\n{frontmatter}\n---\n{entry.body}")
+        target.write_text(f"---\n{frontmatter}\n---\n{entry.body}", encoding="utf-8")
         return str(target)
 
     def get(self, name: str, type: str) -> Entry | None:
@@ -80,7 +81,7 @@ class FilesystemProvider(Provider):
         slug = _kebab(name)
         suffix = f"-{type}-{slug}.md"
         for path in self.root.glob(f"*{suffix}"):
-            meta, body = _parse(path.read_text())
+            meta, body = _parse(path.read_text(encoding="utf-8"))
             return Entry(
                 name=meta.get("name", name),
                 description=meta.get("description", ""),
@@ -102,7 +103,7 @@ class FilesystemProvider(Provider):
             return []
         entries: list[Entry] = []
         for path in sorted(self.root.glob("*.md")):
-            meta, body = _parse(path.read_text())
+            meta, body = _parse(path.read_text(encoding="utf-8"))
             entry = Entry(
                 name=meta.get("name", path.stem),
                 description=meta.get("description", ""),
