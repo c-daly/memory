@@ -25,11 +25,43 @@ This plugin is a re-derivation after the original 2026-05-09 plan was lost in a 
 - MCP-backed providers (future phase).
 - Schema registration / typed schemas — files just have `type: user|feedback|project|reference`.
 
-## Surface (planned)
+## Surface
 
-- **CLI:** `memory read <name>`, `memory write --name X --type T --description D [--body -|@file]`, `memory list [--type T]`, `memory delete <name>`, `memory migrate <src-dir>`.
-- **MCP:** `memory__read`, `memory__write`, `memory__list`, `memory__delete`.
-- Both surfaces map to the same `memory_reader` / `memory_writer` underneath.
+Both CLI and MCP expose the same four operations, mapping to `memory_writer` / `memory_reader` / `lib/index.py` underneath.
+
+**CLI** (via `bin/memory`):
+
+```
+memory write --type T --name N --subject S --description D    # body from stdin
+memory list [--type T] [--subject S]
+memory get --name N --type T
+memory rebuild-index                                          # rescan vault, regenerate MEMORY.md
+```
+
+**MCP** (via `bin/memory-server`, FastMCP):
+
+- `memory_write(type, name, subject, description, body)` — write a memory entry; returns the stored path
+- `memory_list(type=None, subject=None)` — list entries; returns markdown
+- `memory_get(name, type)` — read a single entry; returns markdown or "not found"
+- `memory_rebuild_index()` — regenerate the MEMORY.md index from disk; returns count
+
+## Runtime dependencies
+
+memory's MCP server uses the [mcp](https://pypi.org/project/mcp/) Python package (FastMCP). The package is installed into a plugin-local virtual environment at `.venv/`, not into the host Python, so the plugin doesn't pollute system site-packages.
+
+### First-run setup
+
+If `uv` (https://docs.astral.sh/uv/) is on PATH, `bin/memory-server` and `bin/memory` auto-bootstrap `.venv` on first invocation. No manual steps required.
+
+If `uv` is unavailable, create the venv manually:
+
+```
+cd ~/.claude/plugins/memory
+python3 -m venv .venv
+.venv/bin/pip install mcp 'pyyaml>=6.0'
+```
+
+The CLI (`bin/memory <subcommand>`) and the MCP server (`bin/memory-server`) both use the same venv.
 
 ## Layout
 
