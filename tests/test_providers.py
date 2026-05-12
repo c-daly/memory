@@ -424,13 +424,15 @@ class TestVaultProviderSubjectTraversal:
             provider.put(_make_entry("project", name="x", subject="/etc/passwd"))
 
     def test_symlink_escape_does_not_resolve_outside_vault(
-        self, vault: Path, tmp_path: Path
+        self, vault: Path, tmp_path_factory: pytest.TempPathFactory
     ) -> None:
         """Even if a symlink inside the vault points outside, candidates
-        that resolve outside vault_root are skipped (no put-outside)."""
-        outside = tmp_path / "outside"
-        outside.mkdir()
-        # Pre-create a PARA root so the symlink lives inside vault.
+        that resolve outside vault_root are skipped (no put-outside).
+
+        NB: `outside` must be truly outside the vault. The `vault` fixture
+        IS pytest's tmp_path, so `tmp_path / "outside"` would land inside
+        the vault and defeat the test."""
+        outside = tmp_path_factory.mktemp("traverse-outside")
         (vault / "10-projects").mkdir(parents=True, exist_ok=True)
         try:
             (vault / "10-projects" / "escape").symlink_to(outside)
@@ -438,11 +440,36 @@ class TestVaultProviderSubjectTraversal:
             pytest.skip("symlinks unsupported on this filesystem")
 
         provider = VaultProvider(vault_root=vault)
-        # subject "escape/sub" would resolve to outside/sub through the symlink;
-        # the candidate is rejected, and since no other PARA root matches,
-        # the entry falls to inbox — never to `outside`.
+        # Path-shaped: "escape/sub" goes through the path-shaped branch.
+        # Through the symlink it would resolve to outside/sub; the bounds
+        # check rejects it; no PARA root matches; falls to inbox.
         written = Path(
             provider.put(_make_entry("project", name="x", subject="escape/sub"))
+        )
+        assert written.is_relative_to(vault)
+        assert not any(outside.rglob("*.md"))
+
+
+    def test_symlink_escape_flat_subject(
+        self, vault: Path, tmp_path_factory: pytest.TempPathFactory
+    ) -> None:
+        """Flat-subject branch: a symlinked PARA subdirectory whose name
+        matches the entry's subject must NOT route the put() outside the
+        vault. Same vector as the path-shaped case but exercised through
+        the os.walk matching path.
+
+        NB: `outside` must be truly outside the vault — see the docstring
+        on test_symlink_escape_does_not_resolve_outside_vault."""
+        outside = tmp_path_factory.mktemp("flat-outside")
+        (vault / "10-projects").mkdir(parents=True, exist_ok=True)
+        try:
+            (vault / "10-projects" / "escape-flat").symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks unsupported on this filesystem")
+
+        provider = VaultProvider(vault_root=vault)
+        written = Path(
+            provider.put(_make_entry("project", name="x", subject="escape-flat"))
         )
         assert written.is_relative_to(vault)
         assert not any(outside.rglob("*.md"))

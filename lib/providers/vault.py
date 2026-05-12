@@ -57,6 +57,10 @@ class VaultProvider(Provider):
         LLM- or user-generated, so an adversarial '../../../tmp' must not
         let put() write outside the vault.
         """
+        # Resolved vault root used as the bound for every candidate path,
+        # in both the path-shaped and flat-subject branches.
+        vault_resolved = self.vault_root.resolve()
+
         if "/" in subject:
             rel = Path(subject)
             if rel.is_absolute() or ".." in rel.parts:
@@ -64,7 +68,6 @@ class VaultProvider(Provider):
                     f"subject must be a vault-relative path without '..' "
                     f"segments; got {subject!r}"
                 )
-            vault_resolved = self.vault_root.resolve()
             for root in PARA_ROOTS:
                 candidate = (self.vault_root / root / rel).resolve()
                 # Defense in depth: even with the '..'-in-parts guard
@@ -84,8 +87,17 @@ class VaultProvider(Provider):
                 continue
             for dirpath, dirnames, _ in os.walk(root_path):
                 for d in dirnames:
-                    if d == subject:
-                        matches.append(Path(dirpath) / d)
+                    if d != subject:
+                        continue
+                    candidate = Path(dirpath) / d
+                    # os.walk does not follow symlinks by default, but it
+                    # still surfaces a symlinked directory's *name* in
+                    # `dirnames`. If `<vault>/10-projects/foo` is a link
+                    # to /tmp/elsewhere, this path is returned as-is and
+                    # the subsequent put() follows the link on write.
+                    # Resolve and bound to keep writes inside the vault.
+                    if candidate.resolve().is_relative_to(vault_resolved):
+                        matches.append(candidate)
 
         if len(matches) == 1:
             return matches[0]
