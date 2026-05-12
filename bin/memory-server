@@ -1,8 +1,34 @@
 #!/usr/bin/env bash
 # bin/memory-server — MCP server entry point.
 #
-# Runs memory's MCP server over stdio. Claude Code spawns this as a
-# subprocess per the .mcp.json registration.
+# Runs memory's MCP server over stdio via the plugin's own .venv.
+# Claude Code spawns this as a subprocess per the .mcp.json registration.
+#
+# Runtime deps (mcp, pyyaml) are isolated in .venv so the plugin doesn't
+# require pip-installing into the system Python. Bootstrap is automatic
+# on first run if 'uv' is on PATH (https://docs.astral.sh/uv/).
 set -euo pipefail
 MEMORY_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-exec python3 "$MEMORY_ROOT/lib/server.py" "$@"
+VENV="$MEMORY_ROOT/.venv"
+
+bootstrap_venv() {
+    if ! command -v uv >/dev/null 2>&1; then
+        for cand in "$HOME/.local/bin/uv" "/usr/local/bin/uv"; do
+            if [[ -x "$cand" ]]; then export PATH="$(dirname "$cand"):$PATH"; break; fi
+        done
+    fi
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "memory: $VENV missing and 'uv' not found on PATH." >&2
+        echo "Install uv (https://docs.astral.sh/uv/), or create the venv manually:" >&2
+        echo "  cd $MEMORY_ROOT && python3 -m venv .venv && .venv/bin/pip install mcp 'pyyaml>=6.0'" >&2
+        exit 1
+    fi
+    uv venv "$VENV" >&2
+    uv pip install --python "$VENV/bin/python" mcp "pyyaml>=6.0" >&2
+}
+
+if [[ ! -x "$VENV/bin/python" ]]; then
+    bootstrap_venv
+fi
+
+exec "$VENV/bin/python" "$MEMORY_ROOT/lib/server.py" "$@"
