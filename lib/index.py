@@ -71,28 +71,37 @@ def _atomic_write(target: Path, text: str) -> None:
 
 
 def read(vault_root: Path) -> list[IndexEntry]:
-    """Parse <vault_root>/MEMORY.md. Return [] if missing. Skip malformed lines silently."""
+    """Parse <vault_root>/MEMORY.md. Return [] if missing or unreadable.
+
+    Skips malformed lines silently. If MEMORY.md itself is corrupt (e.g.
+    non-UTF-8 bytes from a partial write or hand-edit), returns [] so
+    that the reader's missing-or-empty fallback drives a rebuild —
+    same recovery shape as the missing-file case.
+    """
     path = _index_path(vault_root)
     if not path.exists():
         return []
     entries: list[IndexEntry] = []
-    with path.open("r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.rstrip("\n")
-            if not line.startswith("- [["):
-                continue
-            m = _BULLET_RE.match(line)
-            if not m:
-                continue
-            entries.append(
-                IndexEntry(
-                    name=m.group("name").strip(),
-                    type=m.group("type").strip(),
-                    subject=m.group("subject").strip(),
-                    path=m.group("path").strip(),
-                    description=m.group("description").strip(),
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.rstrip("\n")
+                if not line.startswith("- [["):
+                    continue
+                m = _BULLET_RE.match(line)
+                if not m:
+                    continue
+                entries.append(
+                    IndexEntry(
+                        name=m.group("name").strip(),
+                        type=m.group("type").strip(),
+                        subject=m.group("subject").strip(),
+                        path=m.group("path").strip(),
+                        description=m.group("description").strip(),
+                    )
                 )
-            )
+    except (OSError, UnicodeDecodeError):
+        return []
     return entries
 
 
@@ -115,7 +124,16 @@ def append(
     bullet = _format_bullet(entry)
 
     if index_file.exists():
-        existing = index_file.read_text(encoding="utf-8")
+        try:
+            existing = index_file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            # MEMORY.md is unreadable (corrupt bytes, partial write, etc).
+            # rebuild_from_scan walks the vault from disk; the entry file
+            # was just written by provider.put(), so it'll be picked up
+            # and the resulting MEMORY.md will already include this
+            # entry's bullet. Nothing more to append.
+            rebuild_from_scan(vault_root)
+            return
         if existing and not existing.endswith("\n"):
             existing += "\n"
         new_text = existing + bullet + "\n"

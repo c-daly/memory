@@ -176,3 +176,51 @@ def test_read_frontmatter_only_handles_crlf(tmp_path: Path) -> None:
     assert count == 1
     parsed = index.read(tmp_path)
     assert parsed[0].name == "crlf"
+
+
+def test_read_returns_empty_on_non_utf8_memory_md(tmp_path: Path) -> None:
+    """A corrupt MEMORY.md (non-UTF-8 bytes from a partial write or
+    hand-edit) must not crash callers — return [] so the reader's
+    missing-or-empty fallback drives a rebuild."""
+    (tmp_path / "MEMORY.md").write_bytes(
+        b"# MEMORY\n\n- [[10-projects/foo/project/2026-05-12-x.md|x]] "
+        + b"\xb7 type:project subject:foo \xb7 \xff\xff bad\n"
+    )
+    # Before the fix this raised UnicodeDecodeError during the for-loop iteration.
+    assert index.read(tmp_path) == []
+
+
+def test_append_recovers_from_non_utf8_memory_md(tmp_path: Path) -> None:
+    """If MEMORY.md is corrupt at append-time, recover by rebuilding from
+    disk instead of crashing. The entry file is already on disk by the
+    time append() is called (writer order is put-then-append), so the
+    rebuild picks it up and the resulting MEMORY.md is consistent."""
+    # Pre-existing entry on disk
+    (tmp_path / "10-projects" / "foo" / "project").mkdir(parents=True)
+    (tmp_path / "10-projects" / "foo" / "project" / "2026-05-12-other.md").write_text(
+        "---\nname: other\ndescription: d\ntype: project\nsubject: foo\n---\nb\n",
+        encoding="utf-8",
+    )
+    # New entry that's about to be appended (simulate the writer order:
+    # provider.put has already created this file).
+    (tmp_path / "10-projects" / "foo" / "project" / "2026-05-12-new.md").write_text(
+        "---\nname: new\ndescription: d\ntype: project\nsubject: foo\n---\nb\n",
+        encoding="utf-8",
+    )
+    # Corrupt MEMORY.md
+    (tmp_path / "MEMORY.md").write_bytes(b"corrupt\xff\xff\xff bytes")
+
+    # Before the fix this raised UnicodeDecodeError out of append().
+    index.append(
+        tmp_path,
+        name="new",
+        type="project",
+        subject="foo",
+        path="10-projects/foo/project/2026-05-12-new.md",
+        description="d",
+    )
+
+    # Post-rebuild MEMORY.md should be valid and contain BOTH entries.
+    entries = index.read(tmp_path)
+    names = sorted(e.name for e in entries)
+    assert names == ["new", "other"]
