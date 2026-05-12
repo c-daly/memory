@@ -62,12 +62,26 @@ def write(
         if not val or not val.strip():
             raise ValueError(f"{field_name} is required")
 
-    # The MEMORY.md bullet format embeds subject verbatim, with ' · '
-    # (U+00B7) as the field separator. A subject that contains whitespace
-    # or the separator breaks parser round-trip: the bullet's filter-
-    # by-subject lookup would silently miss this entry. Validate at the
-    # writer (the only supported entry point) rather than letting bad
-    # subjects reach the index.
+    # The MEMORY.md bullet format embeds every field verbatim on a
+    # single line, with this shape:
+    #   - [[<path>|<name>]] · type:T subject:S · <description>
+    # A field containing a character that conflicts with the format
+    # produces a bullet that the parser silently skips — put() succeeds
+    # but the entry never appears in list()/get() results.
+    #
+    # Reject the conflicting characters at the writer (the only
+    # supported entry point) so a malformed entry never reaches the
+    # index.
+    if any(c in name for c in "]|\r\n"):
+        raise ValueError(
+            f"name must not contain ']', '|', or newline characters "
+            f"(they break the [[path|name]] bullet link); got {name!r}"
+        )
+    if "\r" in description or "\n" in description:
+        raise ValueError(
+            f"description must not contain newline characters "
+            f"(bullets are one line each); got {description!r}"
+        )
     if any(c.isspace() for c in subject):
         raise ValueError(
             f"subject must not contain whitespace; got {subject!r}"

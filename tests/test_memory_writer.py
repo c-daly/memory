@@ -222,3 +222,38 @@ def test_write_uses_provider_root_not_env(
     # Bullet must be in the provider's root, NOT in the env-configured one.
     assert (provider_root / "MEMORY.md").is_file()
     assert not (env_vault / "MEMORY.md").exists()
+
+
+@pytest.mark.parametrize("bad_name", ["foo]bar", "foo|bar", "foo\nbar", "foo\rbar"])
+def test_write_name_with_bullet_unsafe_chars_raises(
+    vault: Path, provider: FilesystemProvider, bad_name: str
+) -> None:
+    """`]`, `|`, '\\n', '\\r' in name break the [[path|name]] portion of
+    the bullet — without this guard, put() succeeds and the index file
+    is written, but every future read/lookup silently drops the entry."""
+    with pytest.raises(ValueError, match=r"name must not contain"):
+        memory_writer.write(
+            name=bad_name,
+            description="d",
+            type="project",
+            subject="foo",
+            body="b",
+            provider=provider,
+        )
+
+
+@pytest.mark.parametrize("bad_desc", ["a\nb", "a\rb"])
+def test_write_description_with_newline_raises(
+    vault: Path, provider: FilesystemProvider, bad_desc: str
+) -> None:
+    """Descriptions are the bullet's tail on a single line; embedded
+    newlines split the bullet and orphan everything after the break."""
+    with pytest.raises(ValueError, match=r"description must not contain newline"):
+        memory_writer.write(
+            name="x",
+            description=bad_desc,
+            type="project",
+            subject="foo",
+            body="b",
+            provider=provider,
+        )
