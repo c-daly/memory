@@ -15,6 +15,7 @@ import index  # noqa: E402
 import memory_reader  # noqa: E402
 import memory_writer  # noqa: E402
 from config import resolve_vault_root  # noqa: E402
+from lock import MemoryLockTimeoutError  # noqa: E402
 
 mcp = FastMCP("memory")
 
@@ -37,7 +38,12 @@ def memory_write(
             subject=subject,
             body=body,
         )
-    except (ValueError, MemoryCollisionError, MemoryAmbiguousSubjectError) as exc:
+    except (
+        ValueError,
+        MemoryCollisionError,
+        MemoryAmbiguousSubjectError,
+        MemoryLockTimeoutError,
+    ) as exc:
         return f"error: {exc}"
 
 
@@ -65,10 +71,13 @@ def memory_get(name: str, type: str) -> str:
 
 
 @mcp.tool()
-def memory_rebuild_index() -> int:
+def memory_rebuild_index() -> int | str:
     """Regenerate the MEMORY.md index from filesystem scan. Returns entry count."""
     vault_root = resolve_vault_root()
-    return index.rebuild_from_scan(vault_root)
+    try:
+        return index.rebuild_from_scan(vault_root)
+    except MemoryLockTimeoutError as exc:
+        return f"error: {exc}"
 
 
 if __name__ == "__main__":

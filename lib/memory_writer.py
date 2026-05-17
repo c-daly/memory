@@ -9,11 +9,11 @@ makes no overwrite decision.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import index
 from config import resolve_vault_root as _resolve_vault_root
+from lock import memory_lock
 from providers.base import Entry, Provider
 from providers.vault import VaultProvider
 
@@ -96,22 +96,23 @@ def write(
     # a different root.
     vault_root = Path(provider.root)
 
-    entry = Entry(
-        name=name,
-        description=description,
-        type=type,
-        subject=subject,
-        body=body,
-    )
-    path = provider.put(entry)
+    with memory_lock(vault_root, context="memory_writer.write"):
+        entry = Entry(
+            name=name,
+            description=description,
+            type=type,
+            subject=subject,
+            body=body,
+        )
+        path = provider.put(entry)
 
-    # Convert to a vault-relative path for the index. If the provider stored
-    # the entry outside vault_root (e.g. a test FilesystemProvider rooted
-    # elsewhere), fall back to the raw path the provider returned.
-    try:
-        rel_path = Path(path).relative_to(vault_root).as_posix()
-    except ValueError:
-        rel_path = path
+        # Convert to a vault-relative path for the index. If the provider stored
+        # the entry outside vault_root (e.g. a test FilesystemProvider rooted
+        # elsewhere), fall back to the raw path the provider returned.
+        try:
+            rel_path = Path(path).relative_to(vault_root).as_posix()
+        except ValueError:
+            rel_path = path
 
-    index.append(vault_root, name, type, subject, rel_path, description)
-    return path
+        index.append(vault_root, name, type, subject, rel_path, description)
+        return path
