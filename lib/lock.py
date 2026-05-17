@@ -29,7 +29,7 @@ class MemoryLockTimeoutError(TimeoutError):
 
 def lock_path(root: Path) -> Path:
     """Return the provider-root lockfile path."""
-    return Path(root) / LOCK_FILENAME
+    return Path(root).resolve() / LOCK_FILENAME
 
 
 def _held_counts() -> dict[Path, int]:
@@ -63,6 +63,55 @@ def _existing_lock_message(path: Path) -> str:
         f"Existing lock metadata:\n{existing}\n"
         "If no memory writer is running, inspect and remove the lockfile manually."
     )
+
+
+def _parse_metadata(text: str) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            metadata[key.strip()] = value.strip()
+    return metadata
+
+
+def _pid_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _break_stale_lock_if_safe(path: Path) -> bool:
+    """Remove a stale lock only when same-host metadata proves the PID is gone."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    metadata = _parse_metadata(raw)
+    if metadata.get("hostname") != socket.gethostname():
+        return False
+
+    try:
+        pid = int(metadata.get("pid", ""))
+    except ValueError:
+        return False
+
+    if _pid_is_running(pid):
+        return False
+
+    try:
+        if path.read_text(encoding="utf-8") != raw:
+            return False
+        path.unlink()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 @contextmanager
@@ -112,6 +161,9 @@ def memory_lock(
             break
         except FileExistsError:
             if time.monotonic() >= deadline:
+                if _break_stale_lock_if_safe(path):
+                    deadline = time.monotonic() + timeout_s
+                    continue
                 raise MemoryLockTimeoutError(_existing_lock_message(path))
             time.sleep(POLL_INTERVAL_SECONDS)
 
