@@ -2,6 +2,8 @@
 
 The lock is intentionally local and filesystem-backed: it serializes memory
 writers that share one provider root without introducing a storage backend.
+It assumes a local filesystem where ``O_CREAT | O_EXCL`` is atomic; network or
+special mounts may need a different lock strategy.
 """
 from __future__ import annotations
 
@@ -97,7 +99,16 @@ def memory_lock(
                 os.O_CREAT | os.O_EXCL | os.O_WRONLY,
                 0o644,
             )
-            os.write(fd, _metadata(context).encode("utf-8"))
+            try:
+                os.write(fd, _metadata(context).encode("utf-8"))
+            except OSError:
+                os.close(fd)
+                fd = None
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+                raise
             break
         except FileExistsError:
             if time.monotonic() >= deadline:

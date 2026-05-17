@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 import pytest
 
@@ -45,3 +46,20 @@ def test_memory_lock_timeout_includes_existing_metadata(tmp_path: Path) -> None:
     assert "pid: 123" in message
     assert "hostname: test-host" in message
     assert "remove the lockfile manually" in message
+
+
+def test_memory_lock_removes_lockfile_if_metadata_write_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = lock_path(tmp_path)
+
+    def fail_write(fd: int, data: bytes) -> int:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "write", fail_write)
+
+    with pytest.raises(OSError, match="disk full"):
+        with memory_lock(tmp_path, context="write-fails"):
+            pass
+
+    assert not path.exists()
