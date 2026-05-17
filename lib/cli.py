@@ -27,6 +27,7 @@ from lock import MemoryLockTimeoutError  # noqa: E402
 from providers.base import (  # noqa: E402
     MemoryAmbiguousSubjectError,
     MemoryCollisionError,
+    MemorySubjectNotFoundError,
 )
 
 
@@ -47,6 +48,7 @@ def cmd_write(args: argparse.Namespace) -> int:
         ValueError,
         MemoryCollisionError,
         MemoryAmbiguousSubjectError,
+        MemorySubjectNotFoundError,
         MemoryLockTimeoutError,
     ) as e:
         print(f"error: {e}", file=sys.stderr)

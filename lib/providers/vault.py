@@ -23,12 +23,14 @@ from .base import (
     Entry,
     MemoryAmbiguousSubjectError,
     MemoryCollisionError,
+    MemorySubjectNotFoundError,
     Provider,
 )
 
 PARA_ROOTS = ("10-projects", "20-areas", "30-resources")
 INBOX = "00-inbox"
 _REQUIRED_FRONTMATTER = ("name", "description", "type", "subject")
+_ALIASES_FILENAME = ".memory-aliases.yaml"
 
 
 def _slugify(name: str) -> str:
@@ -52,17 +54,65 @@ class VaultProvider(Provider):
 
     # -- placement (the v1 filing rule; isolated for v2 swap-in) ---------
 
-    def _resolve_subject_folder(self, subject: str) -> Path:
-        """Map an entry's subject to a folder under vault_root.
+    def _load_aliases(self) -> dict[str, str]:
+        """Load `<vault>/.memory-aliases.yaml`. Empty dict if missing/invalid.
 
-        Path-shaped subjects (containing '/') must be relative and free of
-        '..' parts: a subject is a hint about *where in the vault* an
-        entry belongs, never an escape hatch out of it. Subjects can be
-        LLM- or user-generated, so an adversarial '../../../tmp' must not
-        let put() write outside the vault.
+        Format: a YAML mapping from incoming-subject to canonical-subject:
+
+            memory-plugin: memory
+            constellation-v2: constellation
+
+        A missing file, an unreadable file, malformed YAML, or non-mapping
+        top-level content all return an empty dict — aliases are a
+        convenience, never load-bearing for correctness.
         """
-        # Resolved vault root used as the bound for every candidate path,
-        # in both the path-shaped and flat-subject branches.
+        alias_file = self.vault_root / _ALIASES_FILENAME
+        if not alias_file.is_file():
+            return {}
+        try:
+            text = alias_file.read_text(encoding="utf-8")
+            data = yaml.safe_load(text) or {}
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            str(k): str(v)
+            for k, v in data.items()
+            if isinstance(k, str) and isinstance(v, str)
+        }
+
+    def _para_candidate_names(self) -> list[str]:
+        """Sorted list of basenames of directories directly under PARA roots.
+
+        Used to populate the candidate list in `MemorySubjectNotFoundError`
+        so callers can offer the user a useful "did you mean..." surface.
+        Walks only one level deep — nested project layouts (e.g.
+        `LOGOS/sophia`) are addressed via path-shaped subjects, not by
+        flattening every nested name into the candidate set.
+        """
+        names: list[str] = []
+        for root in PARA_ROOTS:
+            root_path = self.vault_root / root
+            if root_path.is_dir():
+                names.extend(
+                    p.name for p in root_path.iterdir() if p.is_dir()
+                )
+        return sorted(set(names))
+
+    def _try_subject_resolve(self, subject: str) -> Path | None:
+        """Attempt to resolve `subject` to a PARA folder; return None on miss.
+
+        Returns the matching directory `Path` if the subject resolves
+        unambiguously to a PARA entity, or None if there's simply no
+        match (which the caller may convert into either an alias lookup
+        or a `MemorySubjectNotFoundError`).
+
+        Raises:
+            ValueError: invalid path-shaped subject (absolute or contains '..').
+            MemoryAmbiguousSubjectError: flat subject matches multiple PARA
+                entities at the same depth and cannot be disambiguated.
+        """
         vault_resolved = self.vault_root.resolve()
 
         if "/" in subject:
@@ -74,15 +124,14 @@ class VaultProvider(Provider):
                 )
             for root in PARA_ROOTS:
                 candidate = (self.vault_root / root / rel).resolve()
-                # Defense in depth: even with the '..'-in-parts guard
-                # above, a symlink inside the vault could escape on
-                # resolution. Drop candidates that don't stay under the
+                # Defense in depth: a symlink inside the vault could escape
+                # on resolution. Drop candidates that don't stay under the
                 # resolved vault_root.
                 if not candidate.is_relative_to(vault_resolved):
                     continue
                 if candidate.is_dir():
                     return candidate
-            return self.vault_root / INBOX
+            return None
 
         matches: list[Path] = []
         for root in PARA_ROOTS:
@@ -96,10 +145,8 @@ class VaultProvider(Provider):
                     candidate = Path(dirpath) / d
                     # os.walk does not follow symlinks by default, but it
                     # still surfaces a symlinked directory's *name* in
-                    # `dirnames`. If `<vault>/10-projects/foo` is a link
-                    # to /tmp/elsewhere, this path is returned as-is and
-                    # the subsequent put() follows the link on write.
-                    # Resolve and bound to keep writes inside the vault.
+                    # `dirnames`. Resolve and bound to keep writes inside
+                    # the vault.
                     if candidate.resolve().is_relative_to(vault_resolved):
                         matches.append(candidate)
 
@@ -118,9 +165,50 @@ class VaultProvider(Provider):
                 candidates=[str(p) for p in shallow],
             )
 
+        return None
+
+    def _resolve_subject_folder(self, subject: str) -> Path:
+        """Map an entry's subject to a folder under vault_root.
+
+        Resolution order:
+        1. `subject == "user"` → vault root (special-case for user-scoped
+           memories; not subject to alias lookup).
+        2. Direct resolution against PARA entity directories.
+        3. Alias lookup (from `<vault>/.memory-aliases.yaml`) only when
+           direct resolution misses. Real PARA dirs win over aliases —
+           an alias is a fallback for naming drift, not a redirect.
+        4. If neither direct nor alias resolution finds a match, raise
+           `MemorySubjectNotFoundError`. Memory entries must live close
+           to their entity; silently filing into `00-inbox/` is a bug,
+           not a tolerable default.
+
+        Path-shaped subjects (containing '/') must be relative and free of
+        '..' parts: a subject is a hint about *where in the vault* an
+        entry belongs, never an escape hatch out of it.
+        """
         if subject == "user":
             return self.vault_root
-        return self.vault_root / INBOX
+
+        direct = self._try_subject_resolve(subject)
+        if direct is not None:
+            return direct
+
+        aliases = self._load_aliases()
+        aliased = aliases.get(subject)
+        if aliased is not None:
+            via_alias = self._try_subject_resolve(aliased)
+            if via_alias is not None:
+                return via_alias
+            raise MemorySubjectNotFoundError(
+                subject=subject,
+                alias=aliased,
+                candidates=self._para_candidate_names(),
+            )
+
+        raise MemorySubjectNotFoundError(
+            subject=subject,
+            candidates=self._para_candidate_names(),
+        )
 
     def _resolve_placement(self, entry: Entry) -> Path:
         """Return the full target path for `entry` under the v1 filing rule."""

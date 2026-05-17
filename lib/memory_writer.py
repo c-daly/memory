@@ -44,6 +44,9 @@ def write(
             location already exists.
         MemoryAmbiguousSubjectError: re-raised from the provider when subject
             resolution is ambiguous.
+        MemorySubjectNotFoundError: re-raised from the provider when subject
+            does not resolve to any PARA entity directory (and no alias
+            in `<vault>/.memory-aliases.yaml` redirects it to one).
     """
     if type not in VALID_TYPES:
         raise ValueError(

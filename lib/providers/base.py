@@ -88,6 +88,43 @@ class MemoryAmbiguousSubjectError(Exception):
         self.candidates = candidates
 
 
+class MemorySubjectNotFoundError(Exception):
+    """Raised when subject does not resolve to any PARA entity directory.
+
+    Memory entries must live close to their entity. When a `subject`
+    doesn't match any directory under `10-projects/`, `20-areas/`, or
+    `30-resources/` (and isn't the `user` special case), the provider
+    refuses to silently file the entry in `00-inbox/` — that would
+    route memory away from its entity. Callers should fix the subject
+    or register an alias in `<vault>/.memory-aliases.yaml`.
+
+    Carries the original subject, the alias (if one was followed and
+    still failed to resolve), and the available PARA entity names so
+    callers can surface a helpful error.
+    """
+
+    def __init__(
+        self,
+        subject: str,
+        candidates: list[str],
+        alias: str | None = None,
+        message: str | None = None,
+    ) -> None:
+        if message is None:
+            via_alias = f" (via alias to {alias!r})" if alias else ""
+            preview = ", ".join(candidates[:8])
+            if len(candidates) > 8:
+                preview += f", ... ({len(candidates) - 8} more)"
+            message = (
+                f"subject {subject!r}{via_alias} did not match any PARA "
+                f"project directory; available: [{preview}]"
+            )
+        super().__init__(message)
+        self.subject = subject
+        self.alias = alias
+        self.candidates = candidates
+
+
 class Provider(ABC):
     """Substrate-agnostic storage contract for memory entries.
 

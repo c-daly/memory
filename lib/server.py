@@ -29,7 +29,11 @@ def memory_write(
     clients see the same one-line error format as shell callers, not a
     raw traceback wrapped by FastMCP).
     """
-    from providers.base import MemoryAmbiguousSubjectError, MemoryCollisionError
+    from providers.base import (
+        MemoryAmbiguousSubjectError,
+        MemoryCollisionError,
+        MemorySubjectNotFoundError,
+    )
     try:
         return memory_writer.write(
             name=name,
@@ -42,6 +46,7 @@ def memory_write(
         ValueError,
         MemoryCollisionError,
         MemoryAmbiguousSubjectError,
+        MemorySubjectNotFoundError,
         MemoryLockTimeoutError,
     ) as exc:
         return f"error: {exc}"

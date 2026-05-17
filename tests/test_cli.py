@@ -24,6 +24,8 @@ def _run(args, vault_dir, stdin=""):
 
 
 def test_write_reads_body_from_stdin_and_prints_path(tmp_path):
+    # Subject 'docs' must resolve to a real PARA project — entity-locality.
+    (tmp_path / "10-projects" / "docs").mkdir(parents=True)
     result = _run(
         ["write", "--type", "reference", "--name", "alpha",
          "--subject", "docs", "--description", "first note"],
@@ -39,6 +41,7 @@ def test_write_reads_body_from_stdin_and_prints_path(tmp_path):
 
 
 def test_list_outputs_entries(tmp_path):
+    (tmp_path / "10-projects" / "docs").mkdir(parents=True)
     _run(
         ["write", "--type", "reference", "--name", "alpha",
          "--subject", "docs", "--description", "first"],
@@ -58,6 +61,7 @@ def test_list_outputs_entries(tmp_path):
 
 
 def test_get_outputs_entry_markdown(tmp_path):
+    (tmp_path / "10-projects" / "docs").mkdir(parents=True)
     _run(
         ["write", "--type", "reference", "--name", "alpha",
          "--subject", "docs", "--description", "first note"],
@@ -87,6 +91,7 @@ def test_get_missing_entry_prints_not_found_and_exits_1(tmp_path):
 
 
 def test_rebuild_index_prints_count(tmp_path):
+    (tmp_path / "10-projects" / "docs").mkdir(parents=True)
     _run(
         ["write", "--type", "reference", "--name", "alpha",
          "--subject", "docs", "--description", "first"],

@@ -19,6 +19,7 @@ from providers.base import (
     Entry,
     MemoryAmbiguousSubjectError,
     MemoryCollisionError,
+    MemorySubjectNotFoundError,
 )
 from providers.filesystem import FilesystemProvider
 from providers.vault import VaultProvider
@@ -205,16 +206,27 @@ class TestVaultProviderPlacement:
         assert "10-projects" not in rel.parts
         assert "00-inbox" not in rel.parts
 
-    def test_unresolvable_subject_falls_into_inbox(self, vault: Path) -> None:
+    def test_unresolvable_subject_raises_not_found(self, vault: Path) -> None:
+        """Memory entries must live close to their entity. A subject that
+        doesn't resolve to any PARA project must raise, not silently file
+        into 00-inbox/. The error must carry the available candidates so
+        the caller can offer a useful 'did you mean' surface."""
         provider = VaultProvider(vault_root=vault)
         entry = _make_entry(
             "reference", name="mystery", subject="no-such-thing"
         )
 
-        written = Path(provider.put(entry))
-        rel = written.relative_to(vault)
-        assert rel.parts[0] == "00-inbox"
-        assert rel.parts[1] == "reference"
+        with pytest.raises(MemorySubjectNotFoundError) as excinfo:
+            provider.put(entry)
+
+        assert excinfo.value.subject == "no-such-thing"
+        assert excinfo.value.alias is None
+        # 'foo' is a known top-level project in the fixture vault.
+        assert "foo" in excinfo.value.candidates
+        # No file was created in 00-inbox/.
+        assert not (vault / "00-inbox").exists() or not any(
+            (vault / "00-inbox").rglob("*.md")
+        )
 
     def test_type_subfolder_created_on_first_use(self, vault: Path) -> None:
         provider = VaultProvider(vault_root=vault)
@@ -322,6 +334,120 @@ class TestVaultProviderIndexFastPath:
 
 
 # ---------------------------------------------------------------------------
+# VaultProvider — alias registry (.memory-aliases.yaml)
+# ---------------------------------------------------------------------------
+
+
+def _write_aliases(vault: Path, mapping: dict[str, str]) -> None:
+    """Write a <vault>/.memory-aliases.yaml file with the given mapping."""
+    import yaml as _yaml
+    (vault / ".memory-aliases.yaml").write_text(
+        _yaml.safe_dump(mapping, sort_keys=False), encoding="utf-8"
+    )
+
+
+class TestVaultProviderAliasRegistry:
+    def test_alias_redirects_unresolvable_subject(self, vault: Path) -> None:
+        """An alias bridges a near-miss subject to a real PARA entity.
+
+        Use case: subject 'foo-plugin' doesn't match any project, but the
+        alias 'foo-plugin: foo' redirects it. The entry should land under
+        10-projects/foo/, NOT in 00-inbox/.
+        """
+        _write_aliases(vault, {"foo-plugin": "foo"})
+        provider = VaultProvider(vault_root=vault)
+
+        written = Path(
+            provider.put(_make_entry("project", name="alpha", subject="foo-plugin"))
+        )
+        rel = written.relative_to(vault)
+        assert rel.parts[0] == "10-projects"
+        assert rel.parts[1] == "foo"
+        assert rel.parts[2] == "project"
+
+    def test_alias_to_nonexistent_target_still_raises(self, vault: Path) -> None:
+        """When the alias target also doesn't resolve, raise with both
+        the original subject and the alias chain in the error."""
+        _write_aliases(vault, {"foo-plugin": "still-nonexistent"})
+        provider = VaultProvider(vault_root=vault)
+
+        with pytest.raises(MemorySubjectNotFoundError) as excinfo:
+            provider.put(_make_entry("project", name="x", subject="foo-plugin"))
+
+        assert excinfo.value.subject == "foo-plugin"
+        assert excinfo.value.alias == "still-nonexistent"
+
+    def test_real_dir_wins_over_alias(self, vault: Path) -> None:
+        """If a subject matches a real PARA directory, the alias does NOT
+        override it. Aliases are fallbacks for naming drift, not first-
+        class redirects.
+
+        Setup: alias 'foo: chiron' (would redirect 'foo' to nested chiron).
+        Without the alias, 'foo' resolves directly to 10-projects/foo/.
+        The real match must win — entries land under foo/, not chiron/.
+        """
+        _write_aliases(vault, {"foo": "chiron"})
+        provider = VaultProvider(vault_root=vault)
+
+        written = Path(
+            provider.put(_make_entry("project", name="beta", subject="foo"))
+        )
+        rel = written.relative_to(vault)
+        assert rel.parts[:2] == ("10-projects", "foo")
+
+    def test_alias_does_not_override_user(self, vault: Path) -> None:
+        """The 'user' subject is special-cased to vault root before any
+        alias lookup; users cannot accidentally re-route user-scoped
+        memories by registering an alias."""
+        _write_aliases(vault, {"user": "foo"})
+        provider = VaultProvider(vault_root=vault)
+
+        written = Path(
+            provider.put(_make_entry("user", name="pref-1", subject="user"))
+        )
+        rel = written.relative_to(vault)
+        # Lands at vault root, not under 10-projects/foo/
+        assert rel.parts[0] == "user"
+        assert "10-projects" not in rel.parts
+
+    def test_missing_alias_file_is_no_op(self, vault: Path) -> None:
+        """No alias file present → resolution behaves exactly as if there
+        were no aliases. Unresolvable subjects still raise."""
+        assert not (vault / ".memory-aliases.yaml").exists()
+        provider = VaultProvider(vault_root=vault)
+
+        with pytest.raises(MemorySubjectNotFoundError):
+            provider.put(_make_entry("project", name="x", subject="not-a-thing"))
+
+    def test_corrupt_alias_yaml_soft_fails(self, vault: Path) -> None:
+        """Invalid YAML in the alias file must not crash put() — it
+        degrades to 'no aliases' behavior. Aliases are convenience, not
+        load-bearing; a broken alias file shouldn't stop resolution."""
+        (vault / ".memory-aliases.yaml").write_text(
+            ": :: invalid yaml [[[", encoding="utf-8"
+        )
+        provider = VaultProvider(vault_root=vault)
+
+        # 'foo' resolves directly, so write succeeds (broken aliases ignored).
+        written = Path(
+            provider.put(_make_entry("project", name="x", subject="foo"))
+        )
+        assert (vault / written.relative_to(vault)).is_file()
+
+    def test_non_mapping_alias_file_treated_as_empty(self, vault: Path) -> None:
+        """A YAML file that parses to a list (not a mapping) is ignored
+        — aliases must be `key: value` pairs, anything else is treated
+        as no aliases."""
+        (vault / ".memory-aliases.yaml").write_text(
+            "- not\n- a\n- mapping\n", encoding="utf-8"
+        )
+        provider = VaultProvider(vault_root=vault)
+
+        with pytest.raises(MemorySubjectNotFoundError):
+            provider.put(_make_entry("project", name="x", subject="foo-plugin"))
+
+
+# ---------------------------------------------------------------------------
 # VaultProvider — logical-entry collision (cross-date)
 # ---------------------------------------------------------------------------
 
@@ -407,13 +533,12 @@ class TestVaultProviderSubjectTraversal:
         provider = VaultProvider(vault_root=vault)
         if "/" not in subject:
             # Single-word ".." is treated as a flat subject; matching via
-            # os.walk anchored at vault_root cannot escape, so this falls
-            # through to inbox rather than raising. Verify it doesn't
-            # crash and stays inside the vault.
-            written = Path(
+            # os.walk anchored at vault_root cannot escape (no real dir
+            # named ".."), so this used to fall through to 00-inbox/. Now
+            # it raises MemorySubjectNotFoundError (entity-locality
+            # principle: no silent inbox fallback).
+            with pytest.raises(MemorySubjectNotFoundError):
                 provider.put(_make_entry("project", name="x", subject=subject))
-            )
-            assert written.is_relative_to(vault)
             return
         with pytest.raises(ValueError, match=r"\.\.|absolute"):
             provider.put(_make_entry("project", name="x", subject=subject))
@@ -442,11 +567,11 @@ class TestVaultProviderSubjectTraversal:
         provider = VaultProvider(vault_root=vault)
         # Path-shaped: "escape/sub" goes through the path-shaped branch.
         # Through the symlink it would resolve to outside/sub; the bounds
-        # check rejects it; no PARA root matches; falls to inbox.
-        written = Path(
+        # check rejects it; no PARA root matches; previously fell to inbox,
+        # now raises MemorySubjectNotFoundError. The critical invariant is
+        # that no put-outside-the-vault occurs.
+        with pytest.raises(MemorySubjectNotFoundError):
             provider.put(_make_entry("project", name="x", subject="escape/sub"))
-        )
-        assert written.is_relative_to(vault)
         assert not any(outside.rglob("*.md"))
 
 
@@ -468,10 +593,10 @@ class TestVaultProviderSubjectTraversal:
             pytest.skip("symlinks unsupported on this filesystem")
 
         provider = VaultProvider(vault_root=vault)
-        written = Path(
+        # The symlinked dir is dropped from matches by the bounds check;
+        # no candidates remain → raises (previously fell to inbox).
+        with pytest.raises(MemorySubjectNotFoundError):
             provider.put(_make_entry("project", name="x", subject="escape-flat"))
-        )
-        assert written.is_relative_to(vault)
         assert not any(outside.rglob("*.md"))
 
 
