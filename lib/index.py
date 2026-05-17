@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+from lock import memory_lock
 
 INDEX_FILENAME = "MEMORY.md"
 INDEX_HEADER = (
@@ -117,30 +118,31 @@ def append(
 
     `path` is relative to vault_root. Write is atomic (tempfile + os.replace).
     """
-    index_file = _index_path(vault_root)
-    entry = IndexEntry(
-        name=name, type=type, subject=subject, path=path, description=description
-    )
-    bullet = _format_bullet(entry)
+    with memory_lock(vault_root, context="index.append"):
+        index_file = _index_path(vault_root)
+        entry = IndexEntry(
+            name=name, type=type, subject=subject, path=path, description=description
+        )
+        bullet = _format_bullet(entry)
 
-    if index_file.exists():
-        try:
-            existing = index_file.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            # MEMORY.md is unreadable (corrupt bytes, partial write, etc).
-            # rebuild_from_scan walks the vault from disk; the entry file
-            # was just written by provider.put(), so it'll be picked up
-            # and the resulting MEMORY.md will already include this
-            # entry's bullet. Nothing more to append.
-            rebuild_from_scan(vault_root)
-            return
-        if existing and not existing.endswith("\n"):
-            existing += "\n"
-        new_text = existing + bullet + "\n"
-    else:
-        new_text = INDEX_HEADER + bullet + "\n"
+        if index_file.exists():
+            try:
+                existing = index_file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                # MEMORY.md is unreadable (corrupt bytes, partial write, etc).
+                # rebuild_from_scan walks the vault from disk; the entry file
+                # was just written by provider.put(), so it'll be picked up
+                # and the resulting MEMORY.md will already include this
+                # entry's bullet. Nothing more to append.
+                rebuild_from_scan(vault_root)
+                return
+            if existing and not existing.endswith("\n"):
+                existing += "\n"
+            new_text = existing + bullet + "\n"
+        else:
+            new_text = INDEX_HEADER + bullet + "\n"
 
-    _atomic_write(index_file, new_text)
+        _atomic_write(index_file, new_text)
 
 
 def lookup(vault_root: Path, name: str, type: str) -> str | None:
@@ -227,34 +229,35 @@ def rebuild_from_scan(vault_root: Path) -> int:
     Returns the count of indexed entries.
     """
     vault_root = Path(vault_root)
-    entries: list[IndexEntry] = []
+    with memory_lock(vault_root, context="index.rebuild_from_scan"):
+        entries: list[IndexEntry] = []
 
-    for md_path in sorted(vault_root.rglob("*.md")):
-        if md_path.resolve() == _index_path(vault_root).resolve():
-            continue
-        head = _read_frontmatter_only(md_path)
-        if head is None:
-            continue
-        fm = _parse_frontmatter(head)
-        if not fm:
-            continue
-        name = fm.get("name")
-        description = fm.get("description")
-        type_ = fm.get("type")
-        subject = fm.get("subject")
-        if not (name and description and type_ and subject):
-            continue
-        rel = md_path.relative_to(vault_root).as_posix()
-        entries.append(
-            IndexEntry(
-                name=str(name),
-                type=str(type_),
-                subject=str(subject),
-                path=rel,
-                description=str(description),
+        for md_path in sorted(vault_root.rglob("*.md")):
+            if md_path.resolve() == _index_path(vault_root).resolve():
+                continue
+            head = _read_frontmatter_only(md_path)
+            if head is None:
+                continue
+            fm = _parse_frontmatter(head)
+            if not fm:
+                continue
+            name = fm.get("name")
+            description = fm.get("description")
+            type_ = fm.get("type")
+            subject = fm.get("subject")
+            if not (name and description and type_ and subject):
+                continue
+            rel = md_path.relative_to(vault_root).as_posix()
+            entries.append(
+                IndexEntry(
+                    name=str(name),
+                    type=str(type_),
+                    subject=str(subject),
+                    path=rel,
+                    description=str(description),
+                )
             )
-        )
 
-    body = INDEX_HEADER + "".join(_format_bullet(e) + "\n" for e in entries)
-    _atomic_write(_index_path(vault_root), body)
-    return len(entries)
+        body = INDEX_HEADER + "".join(_format_bullet(e) + "\n" for e in entries)
+        _atomic_write(_index_path(vault_root), body)
+        return len(entries)

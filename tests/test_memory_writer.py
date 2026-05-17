@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 
 import pytest
 
 import index
+from lock import memory_lock
 import memory_writer
 from providers.base import MemoryCollisionError
 from providers.filesystem import FilesystemProvider
@@ -222,6 +224,38 @@ def test_write_uses_provider_root_not_env(
     # Bullet must be in the provider's root, NOT in the env-configured one.
     assert (provider_root / "MEMORY.md").is_file()
     assert not (env_vault / "MEMORY.md").exists()
+
+
+def test_write_waits_for_provider_root_lock(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    finished = threading.Event()
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            memory_writer.write(
+                name="locked-write",
+                description="d",
+                type="project",
+                subject="foo",
+                body="b",
+                provider=provider,
+            )
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    with memory_lock(vault, context="test-hold"):
+        thread = threading.Thread(target=worker)
+        thread.start()
+        assert not finished.wait(0.1)
+
+    assert finished.wait(2.0)
+    thread.join()
+    assert errors == []
+    assert index.lookup(vault, "locked-write", "project") is not None
 
 
 @pytest.mark.parametrize("bad_name", ["foo]bar", "foo|bar", "foo\nbar", "foo\rbar"])

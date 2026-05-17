@@ -13,7 +13,6 @@ sibling lib/ directory on sys.path before importing the in-tree modules.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -24,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import index  # noqa: E402
 import memory_reader  # noqa: E402
 import memory_writer  # noqa: E402
+from lock import MemoryLockTimeoutError  # noqa: E402
 from providers.base import (  # noqa: E402
     MemoryAmbiguousSubjectError,
     MemoryCollisionError,
@@ -43,7 +43,12 @@ def cmd_write(args: argparse.Namespace) -> int:
             subject=args.subject,
             body=body,
         )
-    except (ValueError, MemoryCollisionError, MemoryAmbiguousSubjectError) as e:
+    except (
+        ValueError,
+        MemoryCollisionError,
+        MemoryAmbiguousSubjectError,
+        MemoryLockTimeoutError,
+    ) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     print(path)
@@ -68,7 +73,11 @@ def cmd_get(args: argparse.Namespace) -> int:
 
 def cmd_rebuild_index(args: argparse.Namespace) -> int:
     vault_root = _resolve_vault_root()
-    count = index.rebuild_from_scan(vault_root)
+    try:
+        count = index.rebuild_from_scan(vault_root)
+    except MemoryLockTimeoutError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     print(count)
     return 0
 

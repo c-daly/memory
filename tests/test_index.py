@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 
 import index
+from lock import memory_lock
 
 
 def test_read_missing_returns_empty(tmp_path: Path) -> None:
@@ -124,6 +126,34 @@ def test_rebuild_from_scan(tmp_path: Path) -> None:
 
     text = (tmp_path / "MEMORY.md").read_text(encoding="utf-8")
     assert text.startswith("# MEMORY\n")
+
+
+def test_rebuild_from_scan_waits_for_provider_root_lock(tmp_path: Path) -> None:
+    _write_md(
+        tmp_path / "users" / "alice.md",
+        {"name": "alice", "description": "primary", "type": "user", "subject": "alice"},
+    )
+    finished = threading.Event()
+    result: list[int] = []
+    errors: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            result.append(index.rebuild_from_scan(tmp_path))
+        except BaseException as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    with memory_lock(tmp_path, context="test-hold"):
+        thread = threading.Thread(target=worker)
+        thread.start()
+        assert not finished.wait(0.1)
+
+    assert finished.wait(2.0)
+    thread.join()
+    assert errors == []
+    assert result == [1]
 
 
 def test_rebuild_from_scan_skips_body_bytes(tmp_path: Path) -> None:

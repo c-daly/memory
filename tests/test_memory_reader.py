@@ -261,8 +261,8 @@ def test_get_does_not_rebuild_on_real_miss(
     )
     (tmp_path / "MEMORY.md").write_text(
         "# MEMORY\n\n"
-        f"- [[10-projects/foo/project/2026-05-12-other.md|other]] · "
-        f"type:project subject:foo · d\n",
+        "- [[10-projects/foo/project/2026-05-12-other.md|other]] · "
+        "type:project subject:foo · d\n",
         encoding="utf-8",
     )
 
