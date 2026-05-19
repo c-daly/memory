@@ -113,3 +113,75 @@ def get(name: str, type: str) -> Entry | None:  # noqa: A002
             return None
     full = vault_root / rel
     return _parse_entry_file(full)
+
+
+def _default_providers() -> list:
+    """Return the configured provider list for this plugin.
+
+    v2: a single VaultProvider rooted at MEMORY_VAULT_DIR. Future
+    plurality is an interface concession; today this returns a list of
+    one. Callers iterating the list will pick up additional providers
+    automatically when registered.
+    """
+    from providers.vault import VaultProvider
+    return [VaultProvider(vault_root=_resolve_vault_root())]
+
+
+def brief() -> str:
+    """Compose memory's session-start contribution across registered providers.
+
+    Iterates providers, calls each one's brief(), concatenates with
+    light separators. Provider failures AND factory failures are
+    logged and dropped (omit_section); the call never raises.
+    """
+    try:
+        providers = _default_providers()
+    except Exception as exc:  # noqa: BLE001 — omit_section by contract
+        log.warning("provider factory failed: %s", exc)
+        return "# Memory\n\n_No providers contributed._\n"
+
+    pieces: list[str] = []
+    for provider in providers:
+        try:
+            piece = provider.brief()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("provider %s brief() failed: %s", type(provider).__name__, exc)
+            continue
+        if piece:
+            pieces.append(piece)
+    if not pieces:
+        return "# Memory\n\n_No providers contributed._\n"
+    return "\n\n".join(pieces)
+
+
+def resolve_scope(subject: str) -> list:
+    """Aggregate in-scope entries for `subject` across registered providers.
+
+    Provider failures AND factory failures are logged and dropped
+    (omit_section). Dedup across providers on (type, name, subject);
+    nearest-first order is preserved per provider.
+    """
+    try:
+        providers = _default_providers()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("provider factory failed: %s", exc)
+        return []
+
+    seen: set[tuple[str, str, str]] = set()
+    results: list = []
+    for provider in providers:
+        try:
+            piece = provider.resolve_scope(subject)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "provider %s resolve_scope(%r) failed: %s",
+                type(provider).__name__, subject, exc,
+            )
+            continue
+        for entry in piece:
+            key = (entry.type, entry.name, entry.subject)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(entry)
+    return results
