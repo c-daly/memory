@@ -114,7 +114,13 @@ migrate_one() {
 
   # Extract the body (everything after the closing ---).
   local body
-  body="$(awk 'BEGIN{c=0} /^---$/{c++; next} c>=2' "$file")"
+  body="$(awk '
+    BEGIN { c=0 }
+    /^---$/ {
+      if (c < 2) { c++; next }
+    }
+    c >= 2 { print }
+  ' "$file")"
 
   if printf '%s' "$body" | "$memory_bin" write \
         --type "$type" --name "$name" --subject "$subj" --description "$desc" \

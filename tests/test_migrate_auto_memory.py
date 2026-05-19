@@ -90,3 +90,49 @@ def test_idempotent_on_re_run(tmp_path):
     assert second.returncode == 0
     combined = second.stdout + second.stderr
     assert "already migrated" in combined.lower() or "collision" in combined.lower()
+
+
+def test_body_with_inner_horizontal_rule_is_preserved(tmp_path):
+    """Body extraction must not strip markdown horizontal rules (---) inside bodies."""
+    vault = _make_vault(tmp_path)
+    (vault / ".memory").mkdir(parents=True)
+    auto = tmp_path / "auto-memory"
+    auto_inner = auto / "-fixture/memory"
+    auto_inner.mkdir(parents=True)
+    (auto_inner / "feedback_with_hr.md").write_text(
+        "---\n"
+        "name: with-hr\n"
+        "description: has a horizontal rule\n"
+        "metadata:\n"
+        "  type: feedback\n"
+        "---\n"
+        "First paragraph.\n"
+        "\n"
+        "---\n"
+        "\n"
+        "Second paragraph after horizontal rule.\n"
+    )
+
+    import os
+    result = subprocess.run(
+        [str(SCRIPT), "--batch"],
+        env={
+            "AUTO_MEMORY_DIR": str(auto),
+            "MEMORY_VAULT_DIR": str(vault),
+            "PATH": os.environ["PATH"],
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+    # Locate the migrated entry and confirm the inner --- survives.
+    user_memory = vault / ".memory"
+    files = list(user_memory.glob("*-with-hr.md"))
+    assert len(files) == 1, f"expected 1 migrated file, found: {list(user_memory.iterdir())}"
+    body = files[0].read_text()
+    assert "First paragraph." in body
+    assert "Second paragraph after horizontal rule." in body
+    assert "\n---\n" in body, "horizontal rule (---) was stripped from body"
