@@ -26,10 +26,10 @@ while IFS= read -r line; do
     *'"name":"Write"'*'/.claude/projects/'*'/memory/'*)
       auto=$((auto+1))
       ;;
-    *'mcp__plugin_memory_memory__memory_write'*)
+    *'"name":"mcp__plugin_memory_memory__memory_write"'*)
       plugin=$((plugin+1))
       ;;
-    *'"name":"Bash"'*'bin/memory'*'write'*)
+    *'"name":"Bash"'*'bin/memory write'*)
       plugin=$((plugin+1))
       ;;
   esac
