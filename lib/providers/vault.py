@@ -314,8 +314,6 @@ class VaultProvider(Provider):
         is (type, name, subject); the nearest occurrence wins. Unknown
         subject returns an empty list (omit_section).
         """
-        from providers.base import MemorySubjectNotFoundError
-
         try:
             entity_dir = self._resolve_subject_folder(subject)
         except MemorySubjectNotFoundError:
@@ -328,6 +326,11 @@ class VaultProvider(Provider):
         # safety check to match the existing in-vault check in
         # `_try_subject_resolve`.
         while True:
+            try:
+                if not cur.is_relative_to(vault_root_resolved):
+                    break
+            except (OSError, ValueError):
+                break
             mem = cur / ".memory"
             if mem.is_dir():
                 memory_dirs.append(mem)
