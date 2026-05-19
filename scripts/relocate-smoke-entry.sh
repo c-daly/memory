@@ -31,7 +31,7 @@ if [[ -f "$new" && -f "$old" ]]; then
 fi
 
 if [[ ! -f "$old" ]]; then
-  echo "[relocate-smoke-entry] nothing to do; old location does not exist: $old" >&2
+  echo "[relocate-smoke-entry] nothing to do; old location does not exist: $old"
   exit 0
 fi
 

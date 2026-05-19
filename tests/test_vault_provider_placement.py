@@ -4,13 +4,8 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-
-import pytest
-
-from providers.base import Entry  # noqa: E402
-from providers.vault import VaultProvider  # noqa: E402
+from providers.base import Entry
+from providers.vault import VaultProvider
 
 
 def _make_vault(tmp_path: Path) -> Path:
