@@ -1,13 +1,19 @@
-"""VaultProvider: filesystem-backed Provider with PARA-aware filing rule v1.
+"""VaultProvider: filesystem-backed Provider with PARA-aware filing rule v2.
 
 Resolves an entry's `subject` to a folder under a PARA-style vault
 (`10-projects/`, `20-areas/`, `30-resources/`), then files the entry as
-`<folder>/<type>/<YYYY-MM-DD>-<slug>.md`. Unrecognized subjects fall into
-`00-inbox/`; `subject == "user"` files at the vault root.
+`<entity>/.memory/<YYYY-MM-DD>-<slug>.md` — a dot-prefixed,
+tooling-managed subdir alongside the entity's other notes. The entry's
+`type` lives in YAML frontmatter, not the path.
 
-Placement logic is encapsulated in `_resolve_placement` so v2's
-configurable, .gitignore-style placement rules can swap in by replacing
-only that one method.
+Subjects that don't resolve to a real PARA entity (or its alias) raise
+`MemorySubjectNotFoundError`; the inbox fallback was removed in audit #6
+(2026-05-17) to enforce entity-locality. `subject == "user"` is the one
+non-entity placement and files at `<vault>/.memory/<file>`.
+
+Placement logic is encapsulated in `_resolve_placement` so future
+substrate-specific placement rules can swap in by replacing only that
+one method.
 """
 
 from __future__ import annotations
