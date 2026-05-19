@@ -10,7 +10,7 @@ v1.0.0 + append-locking (T3) + entity-locality enforcement (audit #6) shipped. M
 
 **Reader / writer split.** `memory_reader` and `memory_writer` are the two entry points consumers interact with. Both bind to a `Provider`.
 
-**Providers.** Two ship: `VaultProvider` (default; PARA-aware; files entries to `<vault>/10-projects/<project>/<type>/<YYYY-MM-DD>-<slug>.md`) and `FilesystemProvider` (generic flat layout; used by tests + for plain-filesystem setups).
+**Providers.** Two ship: `VaultProvider` (default; PARA-aware; files entries to `<vault>/10-projects/<project>/.memory/<YYYY-MM-DD>-<slug>.md` — the entry's `type` lives in YAML frontmatter, not the path) and `FilesystemProvider` (generic flat layout; used by tests + for plain-filesystem setups).
 
 **Entry types.** Four hard-coded: `user`, `feedback`, `project`, `reference`. Each entry is one Markdown file with YAML frontmatter (`name`, `description`, `type`, `subject`) plus body. `MEMORY.md` at the vault root is the index — one line per entry, parsed and rewritten atomically.
 

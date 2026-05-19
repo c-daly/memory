@@ -113,3 +113,101 @@ def get(name: str, type: str) -> Entry | None:  # noqa: A002
             return None
     full = vault_root / rel
     return _parse_entry_file(full)
+
+
+def _default_providers() -> list["Provider"]:
+    """Return the configured provider list for this plugin.
+
+    v2: a single VaultProvider rooted at MEMORY_VAULT_DIR. Future
+    plurality is an interface concession; today this returns a list of
+    one. Callers iterating the list will pick up additional providers
+    automatically when registered.
+    """
+    from providers.vault import VaultProvider
+    return [VaultProvider(vault_root=_resolve_vault_root())]
+
+
+def brief() -> str:
+    """Compose memory's session-start brief from provider data.
+
+    Two sections:
+    1. User-level entries (subject == "user"), bulleted.
+    2. Entity inventory: each subject (other than "user") with at least
+       one entry, with the first entry's description as a one-line summary.
+
+    Composition is a consumer concern; providers only expose raw data.
+    Failure mode: omit_section — provider and factory failures are
+    logged and dropped, never raise.
+    """
+    try:
+        providers = _default_providers()
+    except Exception as exc:  # noqa: BLE001 — omit_section by contract
+        log.warning("provider factory failed: %s", exc)
+        return "# Memory\n\n_No providers contributed._\n"
+
+    user_entries: list = []
+    entries_by_subject: dict[str, list] = {}
+    for provider in providers:
+        try:
+            all_entries = provider.list()
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "provider %s list() failed: %s", type(provider).__name__, exc,
+            )
+            continue
+        for entry in all_entries:
+            if entry.subject == "user":
+                user_entries.append(entry)
+            else:
+                entries_by_subject.setdefault(entry.subject, []).append(entry)
+
+    sections: list[str] = []
+    if user_entries:
+        bullets = [
+            f"- {e.name} — {e.description}"
+            for e in sorted(user_entries, key=lambda e: e.name)
+        ]
+        sections.append("## User-level\n" + "\n".join(bullets))
+    if entries_by_subject:
+        inv_bullets = []
+        for subject in sorted(entries_by_subject):
+            first = sorted(entries_by_subject[subject], key=lambda e: e.name)[0]
+            inv_bullets.append(f"- {subject} — {first.description}")
+        sections.append("## Entities with memory\n" + "\n".join(inv_bullets))
+
+    if not sections:
+        return "# Memory\n\n_No entries._\n"
+    return "# Memory\n\n" + "\n\n".join(sections) + "\n"
+
+
+def resolve_scope(subject: str) -> list[Entry]:
+    """Aggregate in-scope entries for `subject` across registered providers.
+
+    Provider failures AND factory failures are logged and dropped
+    (omit_section). Dedup across providers on (type, name, subject);
+    nearest-first order is preserved per provider.
+    """
+    try:
+        providers = _default_providers()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("provider factory failed: %s", exc)
+        return []
+
+    seen: set[tuple[str, str, str]] = set()
+    results: list[Entry] = []
+    for provider in providers:
+        try:
+            piece = provider.resolve_scope(subject)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "provider %s resolve_scope(%r) failed: %s",
+                type(provider).__name__, subject, exc,
+            )
+            continue
+        for entry in piece:
+            key = (entry.type, entry.name, entry.subject)
+            if key in seen:
+                continue
+            seen.add(key)
+            results.append(entry)
+    return results
