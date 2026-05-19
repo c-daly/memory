@@ -126,3 +126,28 @@ def test_resolve_scope_returns_empty_on_ambiguous_subject(tmp_path: Path) -> Non
     entries = provider.resolve_scope("shared")
 
     assert entries == []
+
+
+def test_resolve_scope_skips_unreadable_files(tmp_path: Path) -> None:
+    """A bad file (non-UTF-8 bytes) in a .memory/ dir must not break the walk."""
+    root = tmp_path / "vault"
+    (root / "10-projects" / "alpha" / ".memory").mkdir(parents=True)
+
+    # Write a valid entry alongside a bad-bytes file.
+    valid = Entry(
+        name="good", description="readable", type="project",
+        subject="alpha", body="b\n",
+    )
+    (root / "10-projects" / "alpha" / ".memory" / "2026-05-19-good.md").write_text(
+        valid.to_markdown()
+    )
+    # Non-UTF-8 bytes (invalid sequence).
+    (root / "10-projects" / "alpha" / ".memory" / "2026-05-19-bad.md").write_bytes(
+        b"\xff\xfe\x00not-utf8"
+    )
+
+    provider = VaultProvider(vault_root=root)
+    entries = provider.resolve_scope("alpha")
+
+    # The valid entry should still appear; the bad file is silently skipped.
+    assert any(e.name == "good" for e in entries)

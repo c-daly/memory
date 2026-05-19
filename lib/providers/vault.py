@@ -273,7 +273,11 @@ class VaultProvider(Provider):
         results: list["Entry"] = []
         for mem in memory_dirs:
             for md in sorted(mem.glob("*.md")):
-                entry = self._parse(md.read_text(encoding="utf-8"))
+                try:
+                    text = md.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                entry = self._parse(text)
                 if entry is None:
                     continue
                 key = (entry.type, entry.name, entry.subject)
