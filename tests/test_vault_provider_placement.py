@@ -66,3 +66,42 @@ def test_user_subject_lands_under_vault_root_dot_memory(tmp_path: Path) -> None:
     stored_path = Path(provider.put(entry))
 
     assert stored_path.parent == root / ".memory"
+
+
+def test_bucket_subject_files_under_bucket_memory(tmp_path: Path) -> None:
+    """subject in PARA_ROOTS files at <vault>/<bucket>/.memory/<file>."""
+    root = tmp_path / "vault"
+    (root / "10-projects").mkdir(parents=True)
+    provider = VaultProvider(vault_root=root)
+    entry = Entry(
+        name="bucket-test",
+        description="about all projects",
+        type="project",
+        subject="10-projects",
+        body="b\n",
+    )
+
+    stored = Path(provider.put(entry))
+
+    expected = root / "10-projects" / ".memory" / f"{date.today().isoformat()}-bucket-test.md"
+    assert stored == expected
+    assert expected.exists()
+
+
+def test_all_para_buckets_resolve_as_subjects(tmp_path: Path) -> None:
+    """Each of 10-projects / 20-areas / 30-resources is a valid subject."""
+    root = tmp_path / "vault"
+    for bucket in ("10-projects", "20-areas", "30-resources"):
+        (root / bucket).mkdir(parents=True)
+    provider = VaultProvider(vault_root=root)
+
+    for bucket in ("10-projects", "20-areas", "30-resources"):
+        entry = Entry(
+            name=f"t-{bucket}",
+            description="x",
+            type="project",
+            subject=bucket,
+            body="b\n",
+        )
+        stored = Path(provider.put(entry))
+        assert stored.parent == root / bucket / ".memory"

@@ -179,11 +179,14 @@ class VaultProvider(Provider):
         Resolution order:
         1. `subject == "user"` → vault root (special-case for user-scoped
            memories; not subject to alias lookup).
-        2. Direct resolution against PARA entity directories.
-        3. Alias lookup (from `<vault>/.memory-aliases.yaml`) only when
+        2. `subject in PARA_ROOTS` ({"10-projects", "20-areas", "30-resources"})
+           → `<vault>/<bucket>/` (bucket-level memory storage; complements
+           the reader's ancestor walk-up).
+        3. Direct resolution against PARA entity directories.
+        4. Alias lookup (from `<vault>/.memory-aliases.yaml`) only when
            direct resolution misses. Real PARA dirs win over aliases —
            an alias is a fallback for naming drift, not a redirect.
-        4. If neither direct nor alias resolution finds a match, raise
+        5. If neither direct nor alias resolution finds a match, raise
            `MemorySubjectNotFoundError`. Memory entries must live close
            to their entity; silently filing into `00-inbox/` is a bug,
            not a tolerable default.
@@ -194,6 +197,13 @@ class VaultProvider(Provider):
         """
         if subject == "user":
             return self.vault_root
+
+        # Bucket-level memories: <vault>/<bucket>/.memory/ holds entries
+        # about the bucket as a whole ("memories about all projects").
+        # The reader's resolve_scope walk-up already includes these dirs;
+        # this allows the writer to target them.
+        if subject in PARA_ROOTS:
+            return self.vault_root / subject
 
         direct = self._try_subject_resolve(subject)
         if direct is not None:
