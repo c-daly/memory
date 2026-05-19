@@ -128,11 +128,16 @@ def _default_providers() -> list:
 
 
 def brief() -> str:
-    """Compose memory's session-start contribution across registered providers.
+    """Compose memory's session-start brief from provider data.
 
-    Iterates providers, calls each one's brief(), concatenates with
-    light separators. Provider failures AND factory failures are
-    logged and dropped (omit_section); the call never raises.
+    Two sections:
+    1. User-level entries (subject == "user"), bulleted.
+    2. Entity inventory: each subject (other than "user") with at least
+       one entry, with the first entry's description as a one-line summary.
+
+    Composition is a consumer concern; providers only expose raw data.
+    Failure mode: omit_section — provider and factory failures are
+    logged and dropped, never raise.
     """
     try:
         providers = _default_providers()
@@ -140,18 +145,39 @@ def brief() -> str:
         log.warning("provider factory failed: %s", exc)
         return "# Memory\n\n_No providers contributed._\n"
 
-    pieces: list[str] = []
+    user_entries: list = []
+    entries_by_subject: dict[str, list] = {}
     for provider in providers:
         try:
-            piece = provider.brief()
+            all_entries = provider.list()
         except Exception as exc:  # noqa: BLE001
-            log.warning("provider %s brief() failed: %s", type(provider).__name__, exc)
+            log.warning(
+                "provider %s list() failed: %s", type(provider).__name__, exc,
+            )
             continue
-        if piece:
-            pieces.append(piece)
-    if not pieces:
-        return "# Memory\n\n_No providers contributed._\n"
-    return "\n\n".join(pieces)
+        for entry in all_entries:
+            if entry.subject == "user":
+                user_entries.append(entry)
+            else:
+                entries_by_subject.setdefault(entry.subject, []).append(entry)
+
+    sections: list[str] = []
+    if user_entries:
+        bullets = [
+            f"- {e.name} — {e.description}"
+            for e in sorted(user_entries, key=lambda e: e.name)
+        ]
+        sections.append("## User-level\n" + "\n".join(bullets))
+    if entries_by_subject:
+        inv_bullets = []
+        for subject in sorted(entries_by_subject):
+            first = sorted(entries_by_subject[subject], key=lambda e: e.name)[0]
+            inv_bullets.append(f"- {subject} — {first.description}")
+        sections.append("## Entities with memory\n" + "\n".join(inv_bullets))
+
+    if not sections:
+        return "# Memory\n\n_No entries._\n"
+    return "# Memory\n\n" + "\n\n".join(sections) + "\n"
 
 
 def resolve_scope(subject: str) -> list:

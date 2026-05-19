@@ -160,25 +160,6 @@ class Provider(ABC):
     def exists(self, name: str, type: str) -> bool:
         """Return True if an entry identified by (`name`, `type`) is stored."""
 
-    def brief(self) -> str:
-        """Return this provider's session-start brief contribution.
-
-        Plugins compose multiple providers' briefs; this method returns
-        *this provider's* slice as a markdown string. Plugins stitch with
-        their own logic.
-
-        Default: NotImplementedError. Concrete providers that participate
-        in the session-start surface must override.
-
-        Failure mode: `omit_section` per the Provider Principle table
-        (constellation v2 plan, §Provider Principle). If a provider's
-        brief() raises in production, the plugin's dispatcher should log
-        and drop the contribution rather than failing the whole call.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement brief()"
-        )
-
     def resolve_scope(self, subject: str) -> list[Entry]:
         """Return entries in scope for `subject`.
 
@@ -187,8 +168,8 @@ class Provider(ABC):
         (type, name, subject). Lateral relations are explicitly out of
         scope (v2 design decision: cross-references emerge from content).
 
-        Default: NotImplementedError. Same failure-mode contract as
-        brief() — `omit_section` in production dispatchers.
+        Default: NotImplementedError. Failure mode in production
+        dispatchers is `omit_section` — log and drop, never raise.
         """
         raise NotImplementedError(
             f"{type(self).__name__} does not implement resolve_scope()"

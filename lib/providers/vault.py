@@ -18,7 +18,6 @@ one method.
 
 from __future__ import annotations
 
-import logging
 import os
 import re
 from datetime import date
@@ -38,8 +37,6 @@ PARA_ROOTS = ("10-projects", "20-areas", "30-resources")
 INBOX = "00-inbox"
 _REQUIRED_FRONTMATTER = ("name", "description", "type", "subject")
 _ALIASES_FILENAME = ".memory-aliases.yaml"
-
-log = logging.getLogger(__name__)
 
 
 def _slugify(name: str) -> str:
@@ -233,85 +230,6 @@ class VaultProvider(Provider):
         folder = self._resolve_subject_folder(entry.subject)
         filename = f"{date.today().isoformat()}-{_slugify(entry.name)}.md"
         return folder / ".memory" / filename
-
-    # -- session-start brief --------------------------------------------
-
-    def brief(self) -> str:
-        """Compose memory's session-start contribution from the vault substrate.
-
-        Two sections:
-        1. User-level entries (subject == "user"): contents of <vault>/.memory/.
-        2. Entity inventory: top-level entities under PARA buckets that
-           have a .memory/ subdir. Inventory scope is intentionally limited
-           to top-level entities; nested project hierarchies (e.g.,
-           sub-projects under an entity) are not enumerated in v1.
-
-        Failure mode: omit_section. If reading a section raises, that
-        section is dropped with a log; the brief returns what it has.
-        """
-        sections: list[str] = []
-
-        try:
-            user_section = self._brief_user_section()
-        except Exception as exc:  # noqa: BLE001 — omit_section per docstring
-            log.warning("VaultProvider._brief_user_section failed: %s", exc)
-            user_section = ""
-        if user_section:
-            sections.append(user_section)
-
-        try:
-            inventory_section = self._brief_inventory_section()
-        except Exception as exc:  # noqa: BLE001 — omit_section per docstring
-            log.warning("VaultProvider._brief_inventory_section failed: %s", exc)
-            inventory_section = ""
-        if inventory_section:
-            sections.append(inventory_section)
-
-        if not sections:
-            return "# Memory (vault)\n\n_No user-level entries or entity inventory available._\n"
-
-        return "# Memory (vault)\n\n" + "\n\n".join(sections) + "\n"
-
-    def _brief_user_section(self) -> str:
-        user_dir = self.vault_root / ".memory"
-        if not user_dir.is_dir():
-            return ""
-        bullets: list[str] = []
-        for md in sorted(user_dir.glob("*.md")):
-            entry = self._parse(md.read_text(encoding="utf-8"))
-            if entry is None:
-                continue
-            bullets.append(f"- {entry.name} — {entry.description}")
-        if not bullets:
-            return ""
-        return "## User-level\n" + "\n".join(bullets)
-
-    def _brief_inventory_section(self) -> str:
-        """Top-level PARA entities (only) with a .memory/ subdir."""
-        bullets: list[str] = []
-        for bucket in PARA_ROOTS:
-            bucket_dir = self.vault_root / bucket
-            if not bucket_dir.is_dir():
-                continue
-            for entity_dir in sorted(bucket_dir.iterdir()):
-                if not entity_dir.is_dir():
-                    continue
-                memory_dir = entity_dir / ".memory"
-                if not memory_dir.is_dir():
-                    continue
-                summary = self._entity_inventory_summary(memory_dir)
-                bullets.append(f"- {entity_dir.name} — {summary}")
-        if not bullets:
-            return ""
-        return "## Entities with memory\n" + "\n".join(bullets)
-
-    def _entity_inventory_summary(self, memory_dir: Path) -> str:
-        """One-line summary for the entity inventory: first entry's description."""
-        for md in sorted(memory_dir.glob("*.md")):
-            entry = self._parse(md.read_text(encoding="utf-8"))
-            if entry is not None:
-                return entry.description
-        return "(no entries yet)"
 
     def resolve_scope(self, subject: str) -> list["Entry"]:
         """Walk up from <subject>/.memory/ through ancestor .memory/ dirs.
