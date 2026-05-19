@@ -32,3 +32,14 @@ def test_resolve_scope_unknown_subject_returns_empty(tmp_path: Path, monkeypatch
     entries = memory_reader.resolve_scope("nope")
 
     assert entries == []
+
+
+def test_resolve_scope_factory_failure_does_not_propagate(tmp_path: Path, monkeypatch) -> None:
+    """If _default_providers raises, resolve_scope returns [], never raises."""
+    def _boom():
+        raise RuntimeError("factory failure (simulated)")
+    monkeypatch.setattr(memory_reader, "_default_providers", _boom)
+
+    out = memory_reader.resolve_scope("anything")
+
+    assert out == []

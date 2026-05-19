@@ -38,9 +38,12 @@ def test_brief_includes_provider_heading(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_brief_factory_failure_does_not_propagate(tmp_path: Path, monkeypatch) -> None:
-    """If the provider factory itself raises, dispatch returns skeleton instead of crashing."""
-    monkeypatch.setenv("MEMORY_VAULT_DIR", "/nonexistent/absolutely-not-here")
+    """If _default_providers itself raises, brief() returns a skeleton, never raises."""
+    def _boom():
+        raise RuntimeError("factory failure (simulated)")
+    monkeypatch.setattr(memory_reader, "_default_providers", _boom)
 
     out = memory_reader.brief()
 
     assert isinstance(out, str)
+    assert "_No providers contributed._" in out
