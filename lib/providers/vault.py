@@ -211,10 +211,19 @@ class VaultProvider(Provider):
         )
 
     def _resolve_placement(self, entry: Entry) -> Path:
-        """Return the full target path for `entry` under the v1 filing rule."""
+        """Return the full target path for `entry` under the v2 filing rule.
+
+        Entries land in a `.memory/` (dot-prefixed) subdir under their
+        entity. Dot-prefix marks the dir as plugin-managed (paralleling
+        `.git/`, `.obsidian/`) and avoids collision with same-named
+        PARA entities (`vault/10-projects/memory/` is the memory-plugin
+        project dir; `vault/10-projects/.memory/` is bucket-level memory
+        storage). `type` is frontmatter only; it does not appear in the
+        path.
+        """
         folder = self._resolve_subject_folder(entry.subject)
         filename = f"{date.today().isoformat()}-{_slugify(entry.name)}.md"
-        return folder / entry.type / filename
+        return folder / ".memory" / filename
 
     # -- serialization ---------------------------------------------------
 
