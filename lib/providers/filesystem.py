@@ -110,6 +110,34 @@ class FilesystemProvider(Provider):
     def exists(self, name: str, type: str) -> bool:
         return self.get(name, type) is not None
 
+    def brief(self) -> str:
+        """Minimal filesystem-substrate brief.
+
+        FilesystemProvider is a fixture/no-PARA substrate. It has no
+        notion of user-level vs entity-level; the brief just announces
+        its presence and lists known entries flatly.
+        """
+        try:
+            entries = self.list()
+        except Exception:
+            entries = []
+        lines = ["# Memory (filesystem)"]
+        if not entries:
+            lines.append("\n_No entries._\n")
+            return "\n".join(lines) + "\n"
+        lines.append("")
+        for e in entries:
+            lines.append(f"- {e.name} ({e.type}) — {e.description}")
+        return "\n".join(lines) + "\n"
+
+    def resolve_scope(self, subject: str) -> list:
+        """Filesystem substrate has no hierarchy; scope is flat list filtered by subject."""
+        try:
+            entries = self.list(subject=subject)
+        except Exception:
+            return []
+        return entries
+
     def list(
         self,
         type: str | None = None,
