@@ -12,6 +12,7 @@ only that one method.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from datetime import date
@@ -31,6 +32,8 @@ PARA_ROOTS = ("10-projects", "20-areas", "30-resources")
 INBOX = "00-inbox"
 _REQUIRED_FRONTMATTER = ("name", "description", "type", "subject")
 _ALIASES_FILENAME = ".memory-aliases.yaml"
+
+log = logging.getLogger(__name__)
 
 
 def _slugify(name: str) -> str:
@@ -242,11 +245,19 @@ class VaultProvider(Provider):
         """
         sections: list[str] = []
 
-        user_section = self._brief_user_section()
+        try:
+            user_section = self._brief_user_section()
+        except Exception as exc:  # noqa: BLE001 — omit_section per docstring
+            log.warning("VaultProvider._brief_user_section failed: %s", exc)
+            user_section = ""
         if user_section:
             sections.append(user_section)
 
-        inventory_section = self._brief_inventory_section()
+        try:
+            inventory_section = self._brief_inventory_section()
+        except Exception as exc:  # noqa: BLE001 — omit_section per docstring
+            log.warning("VaultProvider._brief_inventory_section failed: %s", exc)
+            inventory_section = ""
         if inventory_section:
             sections.append(inventory_section)
 
@@ -272,7 +283,7 @@ class VaultProvider(Provider):
     def _brief_inventory_section(self) -> str:
         """Top-level PARA entities (only) with a .memory/ subdir."""
         bullets: list[str] = []
-        for bucket in ("10-projects", "20-areas", "30-resources"):
+        for bucket in PARA_ROOTS:
             bucket_dir = self.vault_root / bucket
             if not bucket_dir.is_dir():
                 continue
