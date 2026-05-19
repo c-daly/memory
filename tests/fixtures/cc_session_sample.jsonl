@@ -1,0 +1,5 @@
+{"type":"tool_use","name":"Write","input":{"file_path":"/home/x/.claude/projects/foo/memory/abc.md","content":"..."}}
+{"type":"tool_use","name":"Write","input":{"file_path":"/home/x/.claude/projects/foo/memory/def.md","content":"..."}}
+{"type":"tool_use","name":"mcp__plugin_memory_memory__memory_write","input":{"type":"user","name":"x"}}
+{"type":"tool_use","name":"Bash","input":{"command":"~/.claude/plugins/memory/bin/memory write --type feedback --name y --subject user"}}
+{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/elsewhere.md"}}
