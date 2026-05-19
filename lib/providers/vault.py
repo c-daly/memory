@@ -307,6 +307,55 @@ class VaultProvider(Provider):
                 return entry.description
         return "(no entries yet)"
 
+    def resolve_scope(self, subject: str) -> list["Entry"]:
+        """Walk up from <subject>/.memory/ through ancestor .memory/ dirs.
+
+        Order: nearest-first (entity -> bucket -> vault root). Dedup key
+        is (type, name, subject); the nearest occurrence wins. Unknown
+        subject returns an empty list (omit_section).
+        """
+        from providers.base import MemorySubjectNotFoundError
+
+        try:
+            entity_dir = self._resolve_subject_folder(subject)
+        except MemorySubjectNotFoundError:
+            return []
+
+        vault_root_resolved = self.vault_root.resolve()
+        memory_dirs: list[Path] = []
+        cur = entity_dir.resolve()
+        # Walk up until we cross vault_root. Use `is_relative_to` for the
+        # safety check to match the existing in-vault check in
+        # `_try_subject_resolve`.
+        while True:
+            mem = cur / ".memory"
+            if mem.is_dir():
+                memory_dirs.append(mem)
+            if cur == vault_root_resolved:
+                break
+            parent = cur.parent
+            try:
+                if not parent.resolve().is_relative_to(vault_root_resolved):
+                    # Walked above vault_root somehow (symlinks, etc); stop.
+                    break
+            except (OSError, ValueError):
+                break
+            cur = parent
+
+        seen: set[tuple[str, str, str]] = set()
+        results: list["Entry"] = []
+        for mem in memory_dirs:
+            for md in sorted(mem.glob("*.md")):
+                entry = self._parse(md.read_text(encoding="utf-8"))
+                if entry is None:
+                    continue
+                key = (entry.type, entry.name, entry.subject)
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(entry)
+        return results
+
     # -- serialization ---------------------------------------------------
 
     @staticmethod
