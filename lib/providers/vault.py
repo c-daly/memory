@@ -240,7 +240,7 @@ class VaultProvider(Provider):
         """
         try:
             entity_dir = self._resolve_subject_folder(subject)
-        except MemorySubjectNotFoundError:
+        except (MemorySubjectNotFoundError, MemoryAmbiguousSubjectError, ValueError):
             return []
 
         vault_root_resolved = self.vault_root.resolve()

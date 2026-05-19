@@ -21,12 +21,15 @@ kebab-cased ``entry.name`` and the date is todays date at write time.
 from __future__ import annotations
 
 import datetime
+import logging
 import pathlib
 import re
 
 import yaml
 
 from .base import Entry, MemoryCollisionError, Provider
+
+log = logging.getLogger(__name__)
 
 _SLUG_NONWORD = re.compile(r"[^a-z0-9]+")
 
@@ -110,11 +113,15 @@ class FilesystemProvider(Provider):
     def exists(self, name: str, type: str) -> bool:
         return self.get(name, type) is not None
 
-    def resolve_scope(self, subject: str) -> list:
-        """Filesystem substrate has no hierarchy; scope is flat list filtered by subject."""
+    def resolve_scope(self, subject: str) -> list[Entry]:
+        """Filesystem substrate has no hierarchy; scope is flat list filtered by subject.
+
+        Failure mode: omit_section. Logs and returns [] on any list() failure.
+        """
         try:
             entries = self.list(subject=subject)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — omit_section by contract
+            log.warning("FilesystemProvider.list(subject=%r) failed: %s", subject, exc)
             return []
         return entries
 

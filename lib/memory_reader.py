@@ -115,7 +115,7 @@ def get(name: str, type: str) -> Entry | None:  # noqa: A002
     return _parse_entry_file(full)
 
 
-def _default_providers() -> list:
+def _default_providers() -> list["Provider"]:
     """Return the configured provider list for this plugin.
 
     v2: a single VaultProvider rooted at MEMORY_VAULT_DIR. Future
@@ -180,7 +180,7 @@ def brief() -> str:
     return "# Memory\n\n" + "\n\n".join(sections) + "\n"
 
 
-def resolve_scope(subject: str) -> list:
+def resolve_scope(subject: str) -> list[Entry]:
     """Aggregate in-scope entries for `subject` across registered providers.
 
     Provider failures AND factory failures are logged and dropped
@@ -194,7 +194,7 @@ def resolve_scope(subject: str) -> list:
         return []
 
     seen: set[tuple[str, str, str]] = set()
-    results: list = []
+    results: list[Entry] = []
     for provider in providers:
         try:
             piece = provider.resolve_scope(subject)

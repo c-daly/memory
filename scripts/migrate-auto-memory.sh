@@ -100,7 +100,7 @@ migrate_one() {
     echo "Type:        $type"
     echo "Suggested subject: $subj"
     printf "Confirm [enter to accept, or type a different subject]: "
-    read user_subj
+    read user_subj < /dev/tty
     if [[ -n "$user_subj" ]]; then
       subj="$user_subj"
     fi
@@ -122,16 +122,10 @@ migrate_one() {
     c >= 2 { print }
   ' "$file")"
 
-  if printf '%s' "$body" | "$memory_bin" write \
-        --type "$type" --name "$name" --subject "$subj" --description "$desc" \
-        > /dev/null 2>&1; then
-    return 0
-  fi
-
-  # Re-run capturing stderr so we can detect collisions.
   local err
   err="$(printf '%s' "$body" | "$memory_bin" write \
-        --type "$type" --name "$name" --subject "$subj" --description "$desc" 2>&1)" || true
+        --type "$type" --name "$name" --subject "$subj" --description "$desc" 2>&1)" \
+    && return 0 || true
 
   if [[ "$err" == *"already exists"* || "$err" == *"MemoryCollisionError"* ]]; then
     echo "[skip] already migrated: $name (collision)" >&2

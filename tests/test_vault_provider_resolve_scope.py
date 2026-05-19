@@ -113,3 +113,16 @@ def test_resolve_scope_returns_empty_for_unknown_subject(tmp_path: Path) -> None
     entries = provider.resolve_scope("does-not-exist")
 
     assert entries == []
+
+
+def test_resolve_scope_returns_empty_on_ambiguous_subject(tmp_path: Path) -> None:
+    """Ambiguous subject (multiple PARA dirs match at same depth) -> omit_section: []."""
+    root = tmp_path / "vault"
+    # Create TWO entities at the same PARA depth with the same name.
+    (root / "10-projects" / "shared" / ".memory").mkdir(parents=True)
+    (root / "20-areas" / "shared" / ".memory").mkdir(parents=True)
+    provider = VaultProvider(vault_root=root)
+
+    entries = provider.resolve_scope("shared")
+
+    assert entries == []
