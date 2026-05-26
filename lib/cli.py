@@ -84,6 +84,21 @@ def cmd_rebuild_index(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_brief(args: argparse.Namespace) -> int:
+    out = memory_reader.brief()
+    sys.stdout.write(out)
+    if not out.endswith("\n"):
+        sys.stdout.write("\n")
+    return 0
+
+
+def cmd_resolve_scope(args: argparse.Namespace) -> int:
+    entries = memory_reader.resolve_scope(args.subject)
+    for entry in entries:
+        print(f"{entry.type}:{entry.subject}:{entry.name} — {entry.description}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="memory",
@@ -113,6 +128,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Rescan the vault and rewrite MEMORY.md from frontmatter.",
     )
     p_rebuild.set_defaults(func=cmd_rebuild_index)
+
+    p_brief = sub.add_parser("brief", help="Emit memory's session-start brief")
+    p_brief.set_defaults(func=cmd_brief)
+
+    p_scope = sub.add_parser("resolve-scope", help="List entries in scope for a subject")
+    p_scope.add_argument("subject")
+    p_scope.set_defaults(func=cmd_resolve_scope)
 
     return parser
 

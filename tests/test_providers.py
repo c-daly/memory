@@ -154,11 +154,12 @@ class TestVaultProviderPlacement:
 
         written = Path(provider.put(entry))
         assert written.exists()
-        # File lands under 10-projects/foo/<type>/<filename>
+        # File lands under 10-projects/foo/.memory/<filename> (v2 layout;
+        # `type` is frontmatter, not a path segment).
         rel = written.relative_to(vault)
         assert rel.parts[0] == "10-projects"
         assert rel.parts[1] == "foo"
-        assert rel.parts[2] == "project"  # type subfolder
+        assert rel.parts[2] == ".memory"
         assert rel.name.endswith(".md")
 
     def test_nested_subject_resolved_by_recursive_walk(self, vault: Path) -> None:
@@ -168,7 +169,7 @@ class TestVaultProviderPlacement:
         written = Path(provider.put(entry))
         rel = written.relative_to(vault)
         assert rel.parts[:3] == ("10-projects", "LOGOS", "chiron")
-        assert rel.parts[3] == "reference"
+        assert rel.parts[3] == ".memory"
 
     def test_ambiguous_subject_raises(self, vault: Path) -> None:
         provider = VaultProvider(vault_root=vault)
@@ -191,7 +192,7 @@ class TestVaultProviderPlacement:
         written = Path(provider.put(entry))
         rel = written.relative_to(vault)
         assert rel.parts[:3] == ("10-projects", "LOGOS", "sophia")
-        assert rel.parts[3] == "feedback"
+        assert rel.parts[3] == ".memory"
 
     def test_user_subject_lands_at_vault_root(self, vault: Path) -> None:
         provider = VaultProvider(vault_root=vault)
@@ -199,8 +200,8 @@ class TestVaultProviderPlacement:
 
         written = Path(provider.put(entry))
         rel = written.relative_to(vault)
-        # Lands directly under <vault_root>/<type>/<filename>
-        assert rel.parts[0] == "user"
+        # Lands directly under <vault_root>/.memory/<filename> (v2 layout).
+        assert rel.parts[0] == ".memory"
         assert rel.name.endswith(".md")
         # No PARA prefix in the path.
         assert "10-projects" not in rel.parts
@@ -229,12 +230,14 @@ class TestVaultProviderPlacement:
         )
 
     def test_type_subfolder_created_on_first_use(self, vault: Path) -> None:
+        """v2: a single `.memory/` subdir is created per entity on first
+        use (no per-type subfolder; type is frontmatter)."""
         provider = VaultProvider(vault_root=vault)
-        type_dir = vault / "10-projects" / "foo" / "project"
-        assert not type_dir.exists()
+        mem_dir = vault / "10-projects" / "foo" / ".memory"
+        assert not mem_dir.exists()
 
         provider.put(_make_entry("project", name="first", subject="foo"))
-        assert type_dir.is_dir()
+        assert mem_dir.is_dir()
 
     def test_env_var_resolves_vault_root(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -321,7 +324,7 @@ class TestVaultProviderIndexFastPath:
         provider.put(_make_entry("project", name="indexed", subject="foo"))
         provider.put(_make_entry("feedback", name="unindexed", subject="foo"))
         # MEMORY.md contains only one of the two entries on disk.
-        p_indexed = next((vault / "10-projects" / "foo" / "project").glob("*.md"))
+        p_indexed = next((vault / "10-projects" / "foo" / ".memory").glob("*-indexed.md"))
         _write_index(
             vault,
             [f"- [[{p_indexed.relative_to(vault)}|indexed]] "
@@ -363,7 +366,7 @@ class TestVaultProviderAliasRegistry:
         rel = written.relative_to(vault)
         assert rel.parts[0] == "10-projects"
         assert rel.parts[1] == "foo"
-        assert rel.parts[2] == "project"
+        assert rel.parts[2] == ".memory"
 
     def test_alias_to_nonexistent_target_still_raises(self, vault: Path) -> None:
         """When the alias target also doesn't resolve, raise with both
@@ -406,8 +409,8 @@ class TestVaultProviderAliasRegistry:
             provider.put(_make_entry("user", name="pref-1", subject="user"))
         )
         rel = written.relative_to(vault)
-        # Lands at vault root, not under 10-projects/foo/
-        assert rel.parts[0] == "user"
+        # Lands at vault root .memory/, not under 10-projects/foo/
+        assert rel.parts[0] == ".memory"
         assert "10-projects" not in rel.parts
 
     def test_missing_alias_file_is_no_op(self, vault: Path) -> None:
@@ -476,13 +479,49 @@ class TestVaultProviderCrossDayCollision:
         with pytest.raises(MemoryCollisionError):
             provider.put(_make_entry("project", name="x", subject="foo"))
 
-    def test_put_same_name_different_type_allowed(self, vault: Path) -> None:
-        """Collision is on (name, type), not on name alone — different
-        types with the same name are independent entries."""
+    def test_put_same_name_different_type_collides_under_v2(
+        self, vault: Path
+    ) -> None:
+        """Under v2 layout the filename is `<date>-<name>.md` (type is
+        frontmatter, not in the path or filename), so two same-day puts
+        with the same `name` but different `type` collide on the file
+        path. Callers must pick distinct names for distinct logical
+        entries, even across types."""
         provider = VaultProvider(vault_root=vault)
         provider.put(_make_entry("project", name="x", subject="foo"))
-        # Should not raise; same name, different type.
-        provider.put(_make_entry("feedback", name="x", subject="foo"))
+        with pytest.raises(MemoryCollisionError):
+            provider.put(_make_entry("feedback", name="x", subject="foo"))
+
+    def test_put_same_name_different_type_different_date_does_not_collide(
+        self, vault: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """v2 layout: same name + different type + different date -> no collision.
+
+        The v2 placement (<entity>/.memory/<date>-<name>.md) drops type from
+        the path, so collision becomes (name, date)-based. Different dates
+        separate cleanly even with the same name + different types. Pairs
+        with `test_put_same_name_different_type_collides_under_v2` to tell
+        the full story.
+        """
+        import datetime as _dt
+
+        provider = VaultProvider(vault_root=vault)
+
+        class _FrozenDate(_dt.date):
+            _today = _dt.date(2026, 5, 1)
+            @classmethod
+            def today(cls):
+                return cls._today
+
+        monkeypatch.setattr("providers.vault.date", _FrozenDate)
+        p1 = provider.put(_make_entry("project", name="shared", subject="foo"))
+
+        _FrozenDate._today = _dt.date(2026, 5, 2)
+        p2 = provider.put(_make_entry("feedback", name="shared", subject="foo"))
+
+        assert p1 != p2
+        assert Path(p1).exists()
+        assert Path(p2).exists()
 
 
 # ---------------------------------------------------------------------------

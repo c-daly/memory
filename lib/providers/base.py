@@ -159,3 +159,18 @@ class Provider(ABC):
     @abstractmethod
     def exists(self, name: str, type: str) -> bool:
         """Return True if an entry identified by (`name`, `type`) is stored."""
+
+    def resolve_scope(self, subject: str) -> list[Entry]:
+        """Return entries in scope for `subject`.
+
+        Scope is a vertical walk-up from `subject`'s entity dir through
+        every ancestor `.memory/` dir, nearest-first, deduplicated by
+        (type, name, subject). Lateral relations are explicitly out of
+        scope (v2 design decision: cross-references emerge from content).
+
+        Default: NotImplementedError. Failure mode in production
+        dispatchers is `omit_section` — log and drop, never raise.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement resolve_scope()"
+        )

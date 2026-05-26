@@ -1,13 +1,19 @@
-"""VaultProvider: filesystem-backed Provider with PARA-aware filing rule v1.
+"""VaultProvider: filesystem-backed Provider with PARA-aware filing rule v2.
 
 Resolves an entry's `subject` to a folder under a PARA-style vault
 (`10-projects/`, `20-areas/`, `30-resources/`), then files the entry as
-`<folder>/<type>/<YYYY-MM-DD>-<slug>.md`. Unrecognized subjects fall into
-`00-inbox/`; `subject == "user"` files at the vault root.
+`<entity>/.memory/<YYYY-MM-DD>-<slug>.md` — a dot-prefixed,
+tooling-managed subdir alongside the entity's other notes. The entry's
+`type` lives in YAML frontmatter, not the path.
 
-Placement logic is encapsulated in `_resolve_placement` so v2's
-configurable, .gitignore-style placement rules can swap in by replacing
-only that one method.
+Subjects that don't resolve to a real PARA entity (or its alias) raise
+`MemorySubjectNotFoundError`; the inbox fallback was removed in audit #6
+(2026-05-17) to enforce entity-locality. `subject == "user"` is the one
+non-entity placement and files at `<vault>/.memory/<file>`.
+
+Placement logic is encapsulated in `_resolve_placement` so future
+substrate-specific placement rules can swap in by replacing only that
+one method.
 """
 
 from __future__ import annotations
@@ -173,11 +179,14 @@ class VaultProvider(Provider):
         Resolution order:
         1. `subject == "user"` → vault root (special-case for user-scoped
            memories; not subject to alias lookup).
-        2. Direct resolution against PARA entity directories.
-        3. Alias lookup (from `<vault>/.memory-aliases.yaml`) only when
+        2. `subject in PARA_ROOTS` ({"10-projects", "20-areas", "30-resources"})
+           → `<vault>/<bucket>/` (bucket-level memory storage; complements
+           the reader's ancestor walk-up).
+        3. Direct resolution against PARA entity directories.
+        4. Alias lookup (from `<vault>/.memory-aliases.yaml`) only when
            direct resolution misses. Real PARA dirs win over aliases —
            an alias is a fallback for naming drift, not a redirect.
-        4. If neither direct nor alias resolution finds a match, raise
+        5. If neither direct nor alias resolution finds a match, raise
            `MemorySubjectNotFoundError`. Memory entries must live close
            to their entity; silently filing into `00-inbox/` is a bug,
            not a tolerable default.
@@ -188,6 +197,13 @@ class VaultProvider(Provider):
         """
         if subject == "user":
             return self.vault_root
+
+        # Bucket-level memories: <vault>/<bucket>/.memory/ holds entries
+        # about the bucket as a whole ("memories about all projects").
+        # The reader's resolve_scope walk-up already includes these dirs;
+        # this allows the writer to target them.
+        if subject in PARA_ROOTS:
+            return self.vault_root / subject
 
         direct = self._try_subject_resolve(subject)
         if direct is not None:
@@ -211,10 +227,75 @@ class VaultProvider(Provider):
         )
 
     def _resolve_placement(self, entry: Entry) -> Path:
-        """Return the full target path for `entry` under the v1 filing rule."""
+        """Return the full target path for `entry` under the v2 filing rule.
+
+        Entries land in a `.memory/` (dot-prefixed) subdir under their
+        entity. Dot-prefix marks the dir as plugin-managed (paralleling
+        `.git/`, `.obsidian/`) and avoids collision with same-named
+        PARA entities (`vault/10-projects/memory/` is the memory-plugin
+        project dir; `vault/10-projects/.memory/` is bucket-level memory
+        storage). `type` is frontmatter only; it does not appear in the
+        path.
+        """
         folder = self._resolve_subject_folder(entry.subject)
         filename = f"{date.today().isoformat()}-{_slugify(entry.name)}.md"
-        return folder / entry.type / filename
+        return folder / ".memory" / filename
+
+    def resolve_scope(self, subject: str) -> list["Entry"]:
+        """Walk up from <subject>/.memory/ through ancestor .memory/ dirs.
+
+        Order: nearest-first (entity -> bucket -> vault root). Dedup key
+        is (type, name, subject); the nearest occurrence wins. Unknown
+        subject returns an empty list (omit_section).
+        """
+        try:
+            entity_dir = self._resolve_subject_folder(subject)
+        except (MemorySubjectNotFoundError, MemoryAmbiguousSubjectError, ValueError):
+            return []
+
+        vault_root_resolved = self.vault_root.resolve()
+        memory_dirs: list[Path] = []
+        cur = entity_dir.resolve()
+        # Walk up until we cross vault_root. Use `is_relative_to` for the
+        # safety check to match the existing in-vault check in
+        # `_try_subject_resolve`.
+        while True:
+            try:
+                if not cur.is_relative_to(vault_root_resolved):
+                    break
+            except (OSError, ValueError):
+                break
+            mem = cur / ".memory"
+            if mem.is_dir():
+                memory_dirs.append(mem)
+            if cur == vault_root_resolved:
+                break
+            parent = cur.parent
+            try:
+                if not parent.resolve().is_relative_to(vault_root_resolved):
+                    # Walked above vault_root somehow (symlinks, etc); stop.
+                    break
+            except (OSError, ValueError):
+                break
+            cur = parent
+
+        seen: set[tuple[str, str, str]] = set()
+        results: list["Entry"] = []
+        for mem in memory_dirs:
+            for md in sorted(mem.glob("*.md")):
+                try:
+                    text = md.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                entry = self._parse(text)
+                if entry is None:
+                    continue
+                key = (entry.type, entry.name, entry.subject)
+                if key in seen:
+                    continue
+                seen.add(key)
+                results.append(entry)
+        return results
 
     # -- serialization ---------------------------------------------------
 

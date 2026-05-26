@@ -54,5 +54,8 @@ Trigger: when the user signals stopping or before a clean session end.
 
 - **`Provider` interface must accommodate non-filesystem impls** even though none ship today. Operations are substrate-agnostic — no file handles, no path manipulation in the interface — so future MCP-backed providers (Serena, memory-as-MCP) drop in cleanly.
 - **PARA inbox fallback was removed in audit #6 (2026-05-17).** Subjects that don't resolve to a PARA project raise `MemorySubjectNotFoundError`; the alias registry at `<vault>/.memory-aliases.yaml` is the escape valve for naming drift. Real PARA dirs always win over aliases.
-- **Append-only.** No `delete()`, no `update()`. Corrections are new entries that consumers reconcile. The `MemoryCollisionError` on duplicate `(name, type)` is the enforcement.
+- **Append-only.** No `delete()`, no `update()`. Corrections are new entries that consumers reconcile. v2 layout (`<entity>/.memory/<date>-<name>.md`) has TWO collision checks:
+  1. **Logical:** the `exists(name, type)` check raises `MemoryCollisionError` if any entry with the same (name, type) already exists — applies across dates per provider.
+  2. **Physical:** the path is `<date>-<name>.md` with no type segment, so same (name, date) under the same entity collides on filename regardless of type.
+  Use distinct names if you need to differentiate same-day entries that share a name.
 - **Lock semantics.** Provider-root advisory lockfile `.memory.lock` covers `write → put → index.append` as one critical section, plus `index.rebuild_from_scan`. Re-entrant per thread+root. Same-host stale locks recover only when the recorded PID is proven dead; cross-host or unreadable locks are left in place.
