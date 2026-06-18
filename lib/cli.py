@@ -33,6 +33,94 @@ from providers.base import (  # noqa: E402
 
 from config import resolve_vault_root as _resolve_vault_root  # noqa: E402
 
+import os  # noqa: E402
+
+
+def _memory_root() -> Path:
+    return Path(os.environ.get("MEMORY_ROOT", str(Path(__file__).resolve().parent.parent)))
+
+
+def _now_stamp() -> str:
+    from datetime import datetime
+
+    return datetime.now().strftime("%Y-%m-%dT%H:%M")
+
+
+def cmd_note(args: argparse.Namespace) -> int:
+    from session_notes import append_note  # noqa: E402
+
+    append_note(args.text, root=_memory_root(), stamp=_now_stamp())
+    print("noted")
+    return 0
+
+
+def cmd_record(args: argparse.Namespace) -> int:
+    import shlex  # noqa: E402
+    import subprocess  # noqa: E402
+
+    from session_notes import clear_notes, read_notes  # noqa: E402
+    from session_recorder import record as do_record  # noqa: E402
+    from transcript import digest  # noqa: E402
+
+    root = _memory_root()
+    template_path = os.environ.get(
+        "MEMORY_RECORD_TEMPLATE",
+        str(root / "templates" / "session-record.md"),
+    )
+    template = Path(template_path).read_text(encoding="utf-8")
+    transcript_text = digest(args.transcript, max_chars=24_000)
+    notes = read_notes(root)
+
+    runner_cmd = os.environ.get("MEMORY_RECORD_RUNNER")  # test/override hook
+
+    def runner(prompt: str) -> str:
+        if runner_cmd:  # fake/override runner for tests or alternate models
+            cp = subprocess.run(
+                shlex.split(runner_cmd),
+                input=prompt,
+                capture_output=True,
+                text=True,
+            )
+            return cp.stdout
+        # default: headless claude -p; loop-guard prevents re-trigger
+        env = dict(os.environ)
+        env["MEMORY_RECORDING"] = "1"
+        cp = subprocess.run(
+            ["claude", "-p", prompt],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=180,
+        )
+        return cp.stdout
+
+    def writer(record_text: str) -> None:
+        subprocess.run(
+            [
+                str(root / "bin" / "memory"),
+                "write",
+                "--type",
+                "project",
+                "--subject",
+                "session-records",
+                "--name",
+                f"{_now_stamp()}-session-record",
+                "--description",
+                "informed session record",
+            ],
+            input=record_text,
+            text=True,
+            check=True,
+        )
+
+    result = do_record(transcript_text, notes, template, runner=runner, writer=writer)
+    if result.written:
+        clear_notes(root)
+        print("recorded")
+    else:
+        print("nothing worth recording")
+    return 0
+
 
 def cmd_write(args: argparse.Namespace) -> int:
     body = sys.stdin.read()
@@ -135,6 +223,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_scope = sub.add_parser("resolve-scope", help="List entries in scope for a subject")
     p_scope.add_argument("subject")
     p_scope.set_defaults(func=cmd_resolve_scope)
+
+    p_note = sub.add_parser("note", help="Append a lightweight in-session note.")
+    p_note.add_argument("text")
+    p_note.set_defaults(func=cmd_note)
+
+    p_record = sub.add_parser(
+        "record", help="Compose and write an informed session record."
+    )
+    p_record.add_argument("--transcript", required=True)
+    p_record.set_defaults(func=cmd_record)
 
     return parser
 
