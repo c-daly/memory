@@ -12,6 +12,8 @@ from typing import Callable
 
 SKIP_SENTINEL = "<<NOTHING-WORTH-RECORDING>>"
 
+_TEMPLATE_SENTINEL = "\x00TEMPLATE\x00"
+
 _PROMPT = """You are an informed recorder writing a durable record of a work session
 for the user to look back on months later (e.g. to reconstruct an invoice). You were
 present for this session. Write a faithful, concise record using ONLY the template
@@ -21,7 +23,7 @@ was actually done and learned — not narration of your own process.
 If there is genuinely nothing worth recording, reply with EXACTLY: {sentinel}
 
 TEMPLATE:
-{template}
+\x00TEMPLATE\x00
 
 IN-SESSION NOTES (anchors the user/agent jotted while working):
 {notes}
@@ -38,8 +40,12 @@ class RecordResult:
 
 
 def build_prompt(transcript: str, notes: str, template: str) -> str:
-    return _PROMPT.format(sentinel=SKIP_SENTINEL, template=template,
-                          notes=notes or "(none)", transcript=transcript or "(none)")
+    partial = _PROMPT.format(
+        sentinel=SKIP_SENTINEL,
+        notes=notes or "(none)",
+        transcript=transcript or "(none)",
+    )
+    return partial.replace(_TEMPLATE_SENTINEL, template)
 
 
 def record(

@@ -21,3 +21,6 @@ venv/
 
 # Plans and decisions live in the vault (source of truth); .claude/ is local-only
 .claude/
+
+# Runtime state (session notes, etc.)
+var/

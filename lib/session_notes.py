@@ -8,7 +8,6 @@ sessions interleave. Acceptable for now; revisit with session-id scoping later.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 
 def notes_path(root: Path) -> Path:

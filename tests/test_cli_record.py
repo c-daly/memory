@@ -63,4 +63,38 @@ def test_record_declines_gracefully_with_fake_runner(tmp_path):
     r = subprocess.run([str(CLI), "record", "--transcript", str(t)],
                        env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    assert "recorded" not in r.stdout.lower() or "nothing" in r.stdout.lower()
+    assert "nothing worth recording" in r.stdout.lower()
+
+
+def test_record_preserves_notes_on_vault_write_failure(tmp_path):
+    """Fail-safe: when the vault write fails, notes are preserved and no traceback escapes."""
+    import json as _json
+    env = _env(tmp_path)
+    # Real content runner so record() proceeds past the skip check
+    env["MEMORY_RECORD_RUNNER"] = "echo # Fake record content"
+    # Break the vault by making MEMORY_VAULT_DIR a file (write will fail)
+    bad_vault = tmp_path / "not_a_dir.txt"
+    bad_vault.write_text("not a vault", encoding="utf-8")
+    env["MEMORY_VAULT_DIR"] = str(bad_vault)
+
+    t = tmp_path / "t.jsonl"
+    t.write_text(
+        _json.dumps({"type": "user", "message": {"role": "user", "content": "do work"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    prev = NOTES_FILE.read_text(encoding="utf-8") if NOTES_FILE.exists() else None
+    NOTES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    NOTES_FILE.write_text("- [2026-01-01T00:00] existing note\n", encoding="utf-8")
+    try:
+        r = subprocess.run(
+            [str(CLI), "record", "--transcript", str(t)],
+            env=env, capture_output=True, text=True,
+        )
+        assert r.returncode == 0, f"non-zero exit: {r.returncode}\nstderr: {r.stderr}"
+        assert "Traceback" not in r.stderr, f"traceback escaped: {r.stderr}"
+        assert NOTES_FILE.exists() and "existing note" in NOTES_FILE.read_text(encoding="utf-8"), (
+            "notes were cleared on vault write failure"
+        )
+    finally:
+        _restore_notes(prev)

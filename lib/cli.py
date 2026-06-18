@@ -13,6 +13,7 @@ sibling lib/ directory on sys.path before importing the in-tree modules.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -32,8 +33,6 @@ from providers.base import (  # noqa: E402
 
 
 from config import resolve_vault_root as _resolve_vault_root  # noqa: E402
-
-import os  # noqa: E402
 
 
 def _memory_root() -> Path:
@@ -94,29 +93,38 @@ def cmd_record(args: argparse.Namespace) -> int:
         )
         return cp.stdout
 
+    _write_failed = [False]
+
     def writer(record_text: str) -> None:
-        subprocess.run(
-            [
-                str(root / "bin" / "memory"),
-                "write",
-                "--type",
-                "project",
-                "--subject",
-                "session-records",
-                "--name",
-                f"{_now_stamp()}-session-record",
-                "--description",
-                "informed session record",
-            ],
-            input=record_text,
-            text=True,
-            check=True,
-        )
+        try:
+            subprocess.run(
+                [
+                    str(root / "bin" / "memory"),
+                    "write",
+                    "--type",
+                    "project",
+                    "--subject",
+                    "session-records",
+                    "--name",
+                    f"{_now_stamp()}-session-record",
+                    "--description",
+                    "informed session record",
+                ],
+                input=record_text,
+                text=True,
+                check=True,
+                capture_output=True,
+            )
+        except Exception as exc:
+            print(f"warning: vault write failed ({exc}); notes preserved for retry", file=sys.stderr)
+            _write_failed[0] = True
 
     result = do_record(transcript_text, notes, template, runner=runner, writer=writer)
-    if result.written:
+    if result.written and not _write_failed[0]:
         clear_notes(root)
         print("recorded")
+    elif result.written and _write_failed[0]:
+        pass  # warning already printed; notes preserved
     else:
         print("nothing worth recording")
     return 0

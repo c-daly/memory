@@ -50,3 +50,14 @@ def test_record_skips_write_on_empty_runner_output():
     result = record(transcript="x", notes="", template="t",
                     runner=lambda p: "   ", writer=lambda r: (_ for _ in ()).throw(AssertionError()))
     assert result.written is False
+
+
+def test_build_prompt_survives_single_brace_template():
+    """User templates with single-brace placeholders must not raise KeyError."""
+    template = "Record: {client} on {date}"
+    prompt = build_prompt(transcript="user: did work", notes="- note", template=template)
+    # The raw single-brace content survives in the output unchanged
+    assert "{client}" in prompt
+    assert "{date}" in prompt
+    # Core prompt structure is still intact
+    assert SKIP_SENTINEL in prompt

@@ -26,12 +26,17 @@ def test_digest_extracts_user_and_assistant_text(tmp_path):
 
 def test_digest_is_bounded_and_keeps_the_tail(tmp_path):
     t = tmp_path / "t.jsonl"
-    _write_jsonl(t, [{"type": "user", "message": {"role": "user", "content": "x" * 50}}
-                    for _ in range(100)])
-    out = digest(t, max_chars=200)
-    assert len(out) <= 200
-    # keeps the most-recent content (tail), since recency matters most for recording
-    assert out.endswith("x" * 10) or "x" in out
+    # Two-region fixture: 60 OLD rows then 60 NEW rows.
+    # max_chars=300 is sized to hold only the NEW tail.
+    old_rows = [{"type": "user", "message": {"role": "user", "content": "OLD_MARKER " * 10}}
+                for _ in range(60)]
+    new_rows = [{"type": "user", "message": {"role": "user", "content": "NEW_MARKER " * 10}}
+                for _ in range(60)]
+    _write_jsonl(t, old_rows + new_rows)
+    out = digest(t, max_chars=300)
+    assert len(out) <= 300
+    assert "NEW_MARKER" in out        # tail is preserved
+    assert "OLD_MARKER" not in out    # head is truncated
 
 
 def test_digest_missing_file_returns_empty(tmp_path):
