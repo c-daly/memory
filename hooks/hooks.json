@@ -1,14 +1,24 @@
 {
-  "description": "Memory plugin session-start brief",
+  "description": "Memory plugin: session-start brief + informed session recorder",
   "hooks": {
     "SessionStart": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "${MEMORY_ROOT}/hooks/session-start.sh",
-            "timeout": 10
-          }
+          { "type": "command", "command": "${MEMORY_ROOT}/hooks/session-start.sh", "timeout": 10 }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          { "type": "command", "command": "${MEMORY_ROOT}/hooks/session-record.sh", "timeout": 200 }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          { "type": "command", "command": "${MEMORY_ROOT}/hooks/session-record.sh", "timeout": 200 }
         ]
       }
     ]
