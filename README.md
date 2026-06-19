@@ -4,7 +4,9 @@ Durable agent observation memory for Claude Code — `user`, `feedback`, `projec
 
 ## Status
 
-v1.0.0 + append-locking (T3) + entity-locality enforcement (audit #6) shipped. Memory writes through a PARA-aware vault provider with provider-root advisory locking. Subject resolution supports an optional alias registry for naming-drift cases.
+v0.1.0 — append-locking (T3), entity-locality enforcement (audit #6), and the v2 auto-memory absorption layer all shipped. Memory writes through a PARA-aware vault provider with provider-root advisory locking, files entries into entity-local `<entity>/.memory/` folders, and surfaces a brief at session start. Subject resolution supports an optional alias registry for naming-drift cases.
+
+**v2 auto-memory absorption (merged 2026-05-26).** A `SessionStart` hook (`hooks/session-start.sh`) prints memory's brief into each new session; a one-shot migration (`scripts/migrate-auto-memory.sh`) imports legacy `~/.claude/projects/<cwd>/memory/` entries. This is the read/surfacing side — write-side capture is still agent-initiative via `memory_write` (there is no automatic write-on-session-end yet; that's the in-flight slice-1 recorder, PR #6).
 
 ## Architecture
 
@@ -29,6 +31,8 @@ memory write --type T --name N --subject S --description D    # body from stdin
 memory list  [--type T] [--subject S]
 memory get   --name N --type T
 memory rebuild-index                                          # rescan vault, regenerate MEMORY.md
+memory brief                                                 # emit the session-start brief (used by the SessionStart hook)
+memory resolve-scope <subject>                               # list memory entries in scope for <subject>
 ```
 
 **MCP** (via `bin/memory-server`, FastMCP):
@@ -79,7 +83,9 @@ lib/config.py                # vault-root resolution
 lib/providers/base.py        # Provider ABC + Entry + error types
 lib/providers/vault.py       # PARA-aware; default
 lib/providers/filesystem.py  # flat; tests + plain-filesystem
-tests/                       # pytest (116 tests; 100% pass)
+hooks/                       # SessionStart brief hook (hooks.json + session-start.sh)
+scripts/                     # migration + maintenance helpers (migrate-auto-memory.sh, ...)
+tests/                       # pytest (152 tests; 100% pass)
 ```
 
 Plans and decisions for this plugin live in `<vault>/10-projects/memory/`.

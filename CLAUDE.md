@@ -8,9 +8,10 @@ GitHub: `c-daly/memory`. Re-derived after the original 2026-05-09 plan was lost 
 
 ## Current state
 
-- **v1.0.0** shipped 2026-05-12 (providers, MEMORY.md index, reader/writer, CLI, FastMCP server).
+- **v1 milestone (minimal contract)** shipped 2026-05-12 (providers, MEMORY.md index, reader/writer, CLI, FastMCP server) — package version `0.1.0`.
 - **T3 — provider-root append locking** shipped 2026-05-17 (advisory `.memory.lock`, re-entrant, PID-checked stale recovery).
 - **Audit #6 — entity-locality enforcement** shipped 2026-05-17. The inbox fallback in `VaultProvider._resolve_subject_folder` was replaced with a hard `MemorySubjectNotFoundError`; an optional alias registry at `<vault>/.memory-aliases.yaml` handles naming drift.
+- **v2 auto-memory absorption** merged 2026-05-26 (PR #5): a `SessionStart` hook (`hooks/session-start.sh`) emits memory's brief into each session, entries file into entity-local `<entity>/.memory/`, a one-shot migration (`scripts/migrate-auto-memory.sh`) imports legacy auto-memory, and the CLI gains `brief` + `resolve-scope`. Read/surfacing side only — write-side hook capture is unbuilt (in-flight as the slice-1 recorder, memory PR #6).
 
 See `<vault>/10-projects/memory/narrative.md` for the dated chronological state.
 

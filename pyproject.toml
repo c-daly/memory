@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "memory"
-version = "0.0.1"
+version = "0.1.0"
 description = "Durable agent observation memory for Claude Code"
 authors = ["c-daly"]
 package-mode = false
