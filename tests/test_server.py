@@ -2,7 +2,7 @@
 
 The FastMCP server depends on the `mcp` package, which is only available in
 the plugin-local .venv. We invoke .venv/bin/python in a subprocess to verify
-the module imports cleanly and registers the four expected tools.
+the module imports cleanly and registers the six expected tools.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def test_server_imports_and_registers_tools():
         "assert server.mcp.name == 'memory', server.mcp.name;"
         "tools = asyncio.run(server.mcp.list_tools());"
         "names = sorted(t.name for t in tools);"
-        "expected = ['memory_get', 'memory_list', 'memory_rebuild_index', 'memory_write'];"
+        "expected = ['memory_brief', 'memory_get', 'memory_list', 'memory_rebuild_index', 'memory_resolve_scope', 'memory_write'];"
         "assert names == expected, names;"
         "print('ok')"
     )

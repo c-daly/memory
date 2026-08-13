@@ -85,5 +85,25 @@ def memory_rebuild_index() -> int | str:
         return f"error: {exc}"
 
 
+@mcp.tool()
+def memory_brief() -> str:
+    """Return memory's session-orientation brief -- user-level entries plus the
+    entity inventory -- the same summary the session-start hook surfaces."""
+    return memory_reader.brief()
+
+
+@mcp.tool()
+def memory_resolve_scope(subject: str) -> str:
+    """Return all in-scope memory entries for `subject`, nearest-first, as a
+    markdown bullet list (aggregates across providers, walking the scope)."""
+    entries = memory_reader.resolve_scope(subject)
+    if not entries:
+        return "(no entries)"
+    return "\n".join(
+        f"- type:{e.type} subject:{e.subject} name:{e.name} — {e.description}"
+        for e in entries
+    )
+
+
 if __name__ == "__main__":
     mcp.run()
