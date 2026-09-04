@@ -27,7 +27,7 @@ v0.1.0 — append-locking (T3), entity-locality enforcement (audit #6), and the 
 **CLI** (via `bin/memory`):
 
 ```
-memory write --type T --name N --subject S --description D    # body from stdin
+memory write --type T --name N --subject S --description D [--promotes N2]   # body from stdin
 memory list  [--type T] [--subject S]
 memory get   --name N --type T
 memory rebuild-index                                          # rescan vault, regenerate MEMORY.md
@@ -41,6 +41,37 @@ memory resolve-scope <subject>                               # list memory entri
 - `memory_list(type=None, subject=None)` — list as markdown bullets
 - `memory_get(name, type)` — single entry as markdown or `not found`
 - `memory_rebuild_index()` — regenerate MEMORY.md; returns count
+
+### Promotion
+
+A memory can be recorded at too specific a level — a general coding preference
+filed under the one project you happened to learn it in. Re-scoping it is a
+*promotion*: write the same claim at the level it actually applies to, with
+`--promotes` naming the entry it relocates.
+
+```
+memory write --type feedback --name tabs-are-four-spaces --subject user \
+             --description "A general coding preference." \
+             --promotes logos-tabs
+```
+
+The tag lands in the new entry's frontmatter, never on the original — promotion
+adds a file and edits nothing, so append-only holds with no exception.
+
+What it changes:
+
+- **Queries skip the relocated entry.** Its line leaves `MEMORY.md`, so
+  `memory list`, the session brief and any consumer reading the index all stop
+  offering it. The promotion answers in its place.
+- **`memory get` still returns it.** Retrieval by name falls back to the entry
+  files when the index no longer lists it, so the tag stays followable: an
+  agent that wants the original can reach it.
+- **The original file is untouched.** `MEMORY.md` is a regenerable index; the
+  entry files are the record.
+
+Deciding *what* to promote is not memory's job — memory stores and recalls. The
+judgement belongs to continuity, which writes the promoted entry through this
+same CLI.
 
 ## Configuration
 
