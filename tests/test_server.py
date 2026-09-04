@@ -6,6 +6,7 @@ the module imports cleanly and registers the four expected tools.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -69,3 +70,34 @@ def test_memory_write_returns_error_string_on_validation_failure():
     )
     assert result.returncode == 0, result.stderr
     assert "ok" in result.stdout
+
+
+def test_memory_write_accepts_the_promotes_tag(tmp_path):
+    """The MCP surface must be able to promote too. The CLI gained --promotes;
+    an MCP client that could write but not re-scope would be a second entry
+    point to the same operation with different capabilities."""
+    venv_py = ROOT / ".venv" / "bin" / "python"
+    if not venv_py.exists():
+        pytest.skip(".venv not bootstrapped")
+    (tmp_path / "10-projects" / "LOGOS").mkdir(parents=True)
+    code = (
+        "import sys;"
+        "sys.path.insert(0, 'lib');"
+        "from server import memory_write;"
+        "fn = getattr(memory_write, 'fn', memory_write);"
+        "out = fn(type='feedback', name='tabs-are-four-spaces', subject='LOGOS',"
+        " description='A general coding preference.', body='b',"
+        " promotes='logos-tabs');"
+        "assert not out.startswith('error: '), out;"
+        "print(out)"
+    )
+    result = subprocess.run(
+        [str(venv_py), "-c", code],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        env={**os.environ, "MEMORY_VAULT_DIR": str(tmp_path)},
+    )
+    assert result.returncode == 0, result.stderr
+    written = Path(result.stdout.strip())
+    assert "promotes: logos-tabs" in written.read_text()

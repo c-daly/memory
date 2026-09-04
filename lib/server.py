@@ -22,12 +22,18 @@ mcp = FastMCP("memory")
 
 @mcp.tool()
 def memory_write(
-    type: str, name: str, subject: str, description: str, body: str
+    type: str, name: str, subject: str, description: str, body: str,
+    promotes: str | None = None,
 ) -> str:
     """Write a memory entry. Returns the stored path, or 'error: ...' on a
     business-validation failure (matches the CLI's contract so MCP
     clients see the same one-line error format as shell callers, not a
     raw traceback wrapped by FastMCP).
+
+    `promotes` names an entry this one relocates, for re-scoping a memory that
+    was recorded at too specific a level. It goes on the entry being written,
+    never on the one named -- promotion adds a file and edits nothing. Queries
+    stop returning the named entry; `memory_get` still retrieves it by name.
     """
     from providers.base import (
         MemoryAmbiguousSubjectError,
@@ -41,6 +47,7 @@ def memory_write(
             type=type,
             subject=subject,
             body=body,
+            promotes=promotes,
         )
     except (
         ValueError,

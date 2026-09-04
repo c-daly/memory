@@ -13,6 +13,8 @@ GitHub: `c-daly/memory`. Re-derived after the original 2026-05-09 plan was lost 
 - **Audit #6 — entity-locality enforcement** shipped 2026-05-17. The inbox fallback in `VaultProvider._resolve_subject_folder` was replaced with a hard `MemorySubjectNotFoundError`; an optional alias registry at `<vault>/.memory-aliases.yaml` handles naming drift.
 - **v2 auto-memory absorption** merged 2026-05-26 (PR #5): a `SessionStart` hook (`hooks/session-start.sh`) emits memory's brief into each session, entries file into entity-local `<entity>/.memory/`, a one-shot migration (`scripts/migrate-auto-memory.sh`) imports legacy auto-memory, and the CLI gains `brief` + `resolve-scope`. Read/surfacing side only — write-side hook capture is unbuilt (in-flight as the slice-1 recorder, memory PR #6).
 
+- **Promotion (`--promotes`)** shipped 2026-09-04 (PR #10): an entry can name another it relocates, for re-scoping a memory recorded at too specific a level. The tag goes on the entry being written, never the one named. Queries skip the relocated entry; `get` still retrieves it. Memory only *honours* the tag — deciding what to promote is continuity's.
+
 See `<vault>/10-projects/memory/narrative.md` for the dated chronological state.
 
 ## Canonical state files (read these for project recovery)
@@ -59,4 +61,14 @@ Trigger: when the user signals stopping or before a clean session end.
   1. **Logical:** the `exists(name, type)` check raises `MemoryCollisionError` if any entry with the same (name, type) already exists — applies across dates per provider.
   2. **Physical:** the path is `<date>-<name>.md` with no type segment, so same (name, date) under the same entity collides on filename regardless of type.
   Use distinct names if you need to differentiate same-day entries that share a name.
+
+  **Promotion does not weaken this.** A promotion writes a new entry carrying a
+  `promotes:` tag naming the one it relocates — it adds a file and edits nothing,
+  which is precisely why the tag lives on the new entry rather than the old one.
+  What changes is *retrieval status*, not the record: the relocated entry's line
+  leaves `MEMORY.md`, but `MEMORY.md` is a regenerable index, not the source of
+  truth. The entry file keeps its bytes and `get(name, type)` still returns it,
+  falling back to a filesystem lookup when the index no longer lists it. So
+  "not listed" no longer implies "not present" — that shift is deliberate, and
+  is what keeps a promotion's tag followable back to what it superseded.
 - **Lock semantics.** Provider-root advisory lockfile `.memory.lock` covers `write → put → index.append` as one critical section, plus `index.rebuild_from_scan`. Re-entrant per thread+root. Same-host stale locks recover only when the recorded PID is proven dead; cross-host or unreadable locks are left in place.

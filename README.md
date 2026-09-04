@@ -37,7 +37,7 @@ memory resolve-scope <subject>                               # list memory entri
 
 **MCP** (via `bin/memory-server`, FastMCP):
 
-- `memory_write(type, name, subject, description, body)` — write; returns stored path or `error: ...`
+- `memory_write(type, name, subject, description, body, promotes=None)` — write; returns stored path or `error: ...`
 - `memory_list(type=None, subject=None)` — list as markdown bullets
 - `memory_get(name, type)` — single entry as markdown or `not found`
 - `memory_rebuild_index()` — regenerate MEMORY.md; returns count
