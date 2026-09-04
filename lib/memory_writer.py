@@ -125,5 +125,6 @@ def write(
         except ValueError:
             rel_path = path
 
-        index.append(vault_root, name, type, subject, rel_path, description)
+        index.append(vault_root, name, type, subject, rel_path, description,
+                     promotes=promotes)
         return path

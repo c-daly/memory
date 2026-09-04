@@ -54,6 +54,16 @@ def _format_bullet(entry: IndexEntry) -> str:
     )
 
 
+def _bullet_names(line: str, name: str) -> bool:
+    """True when this bullet is the index line for `name`.
+
+    Matches the `|<name>]]` segment `_format_bullet` emits, so a name that is
+    a prefix of another ("logos-tabs" vs "logos-tabs-extended") cannot match
+    the wrong line.
+    """
+    return f"|{name}]]" in line
+
+
 def _atomic_write(target: Path, text: str) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
@@ -113,6 +123,7 @@ def append(
     subject: str,
     path: str,
     description: str,
+    promotes: str | None = None,
 ) -> None:
     """Append a bullet line for the new entry; create MEMORY.md with header if missing.
 
@@ -136,6 +147,15 @@ def append(
                 # entry's bullet. Nothing more to append.
                 rebuild_from_scan(vault_root)
                 return
+            if promotes:
+                # The entry this one relocates stops being a current answer,
+                # so its line leaves the index queries read. The entry file
+                # itself is untouched, and `get` still returns it by name --
+                # that is how the tag stays followable back to the original.
+                existing = "".join(
+                    ln for ln in existing.splitlines(keepends=True)
+                    if not _bullet_names(ln, promotes)
+                )
             if existing and not existing.endswith("\n"):
                 existing += "\n"
             new_text = existing + bullet + "\n"
@@ -231,6 +251,7 @@ def rebuild_from_scan(vault_root: Path) -> int:
     vault_root = Path(vault_root)
     with memory_lock(vault_root, context="index.rebuild_from_scan"):
         entries: list[IndexEntry] = []
+        promoted_away: set[str] = set()
 
         for md_path in sorted(vault_root.rglob("*.md")):
             if md_path.resolve() == _index_path(vault_root).resolve():
@@ -247,6 +268,9 @@ def rebuild_from_scan(vault_root: Path) -> int:
             subject = fm.get("subject")
             if not (name and description and type_ and subject):
                 continue
+            promotes = fm.get("promotes")
+            if promotes and str(promotes).strip():
+                promoted_away.add(str(promotes).strip())
             rel = md_path.relative_to(vault_root).as_posix()
             entries.append(
                 IndexEntry(
@@ -257,6 +281,12 @@ def rebuild_from_scan(vault_root: Path) -> int:
                     description=str(description),
                 )
             )
+
+        # An entry another has relocated is no longer a current answer, so it
+        # leaves the index every query reads. Its file stays untouched and
+        # `get` still returns it by name, which is how a promotion's tag stays
+        # followable back to the original.
+        entries = [e for e in entries if e.name not in promoted_away]
 
         body = INDEX_HEADER + "".join(_format_bullet(e) + "\n" for e in entries)
         _atomic_write(_index_path(vault_root), body)

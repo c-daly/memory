@@ -254,3 +254,93 @@ def test_append_recovers_from_non_utf8_memory_md(tmp_path: Path) -> None:
     entries = index.read(tmp_path)
     names = sorted(e.name for e in entries)
     assert names == ["new", "other"]
+
+
+# --- promoted-away entries leave the query surface ------------------------
+#
+# MEMORY.md is what every query reads: `memory list`, continuity's read
+# provider, and the every-prompt surfacing hook. An entry that a promotion has
+# relocated is no longer a current answer, so it does not belong there. The
+# entry FILE is untouched — MEMORY.md is a regenerable index, not the record.
+
+
+def _entry_md(vault: Path, rel_dir: str, name: str, *,
+              type: str = "feedback", subject: str = "LOGOS",
+              promotes: str | None = None) -> Path:
+    fm = {"name": name, "description": "d", "type": type, "subject": subject}
+    if promotes is not None:
+        fm["promotes"] = promotes
+    path = vault / rel_dir / ".memory" / f"2026-09-04-{name}.md"
+    _write_md(path, fm)
+    return path
+
+
+def test_rebuild_omits_an_entry_that_has_been_promoted_away(tmp_path: Path) -> None:
+    _entry_md(tmp_path, "10-projects/LOGOS", "logos-tabs")
+    _entry_md(tmp_path, ".", "tabs-are-four-spaces", subject="user",
+              promotes="logos-tabs")
+
+    index.rebuild_from_scan(tmp_path)
+
+    names = {e.name for e in index.read(tmp_path)}
+    assert "tabs-are-four-spaces" in names
+    assert "logos-tabs" not in names
+
+
+def test_rebuild_keeps_entries_nothing_promotes(tmp_path: Path) -> None:
+    _entry_md(tmp_path, "10-projects/LOGOS", "untouched", type="project")
+
+    index.rebuild_from_scan(tmp_path)
+
+    assert {e.name for e in index.read(tmp_path)} == {"untouched"}
+
+
+def test_the_promoted_away_file_is_never_modified(tmp_path: Path) -> None:
+    """Append-only: promotion adds a file and edits nothing. Only the
+    regenerable index changes."""
+    original = _entry_md(tmp_path, "10-projects/LOGOS", "logos-tabs")
+    before = original.read_bytes()
+    _entry_md(tmp_path, ".", "tabs-are-four-spaces", subject="user",
+              promotes="logos-tabs")
+
+    index.rebuild_from_scan(tmp_path)
+
+    assert original.read_bytes() == before
+
+
+def test_a_promotion_of_a_promotion_removes_only_what_it_names(tmp_path: Path) -> None:
+    """Promotions are memories and can themselves be re-scoped. Each tag
+    removes exactly the entry it names, leaving the rest of the chain alone."""
+    _entry_md(tmp_path, "10-projects/LOGOS/sophia", "narrow")
+    _entry_md(tmp_path, "10-projects/LOGOS", "middle", promotes="narrow")
+    _entry_md(tmp_path, ".", "broad", subject="user", promotes="middle")
+
+    index.rebuild_from_scan(tmp_path)
+
+    assert {e.name for e in index.read(tmp_path)} == {"broad"}
+
+
+def test_append_drops_the_line_for_what_the_new_entry_promotes(tmp_path: Path) -> None:
+    """A promotion takes effect on write, without waiting for a rebuild."""
+    index.append(tmp_path, name="logos-tabs", type="feedback", subject="LOGOS",
+                 path="10-projects/LOGOS/.memory/a.md", description="d")
+    assert {e.name for e in index.read(tmp_path)} == {"logos-tabs"}
+
+    index.append(tmp_path, name="tabs-are-four-spaces", type="feedback",
+                 subject="user", path=".memory/b.md", description="d",
+                 promotes="logos-tabs")
+
+    assert {e.name for e in index.read(tmp_path)} == {"tabs-are-four-spaces"}
+
+
+def test_append_does_not_drop_a_name_that_merely_shares_a_prefix(tmp_path: Path) -> None:
+    """'logos-tabs' must not take 'logos-tabs-extended' with it."""
+    for n in ("logos-tabs", "logos-tabs-extended"):
+        index.append(tmp_path, name=n, type="feedback", subject="LOGOS",
+                     path=f"10-projects/LOGOS/.memory/{n}.md", description="d")
+
+    index.append(tmp_path, name="promoted", type="feedback", subject="user",
+                 path=".memory/p.md", description="d", promotes="logos-tabs")
+
+    assert {e.name for e in index.read(tmp_path)} == {
+        "logos-tabs-extended", "promoted"}
