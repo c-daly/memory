@@ -22,6 +22,11 @@ class Entry:
     `type` is the semantic role (user | feedback | project | reference).
     `subject` is what the memory is about; it determines placement.
     They are independent.
+
+    `promotes` is optional and names an entry this one relocates — set when a
+    memory is re-filed at the scope it actually applies to. It lives on the
+    NEW entry, never on the one being relocated, which is what keeps memory
+    append-only: promotion adds a file and edits nothing.
     """
 
     name: str
@@ -29,6 +34,7 @@ class Entry:
     type: str
     subject: str
     body: str
+    promotes: str | None = None
 
     def to_markdown(self) -> str:
         """Render this Entry as a YAML-frontmatter markdown document.
@@ -49,6 +55,10 @@ class Entry:
             "type": self.type,
             "subject": self.subject,
         }
+        # Only present when this entry relocates another. Omitted entirely
+        # otherwise, so ordinary entries render exactly as before.
+        if self.promotes:
+            frontmatter["promotes"] = self.promotes
         fm_text = _yaml.safe_dump(frontmatter, sort_keys=False).strip()
         body = self.body if self.body.endswith("\n") else self.body + "\n"
         return f"---\n{fm_text}\n---\n{body}"

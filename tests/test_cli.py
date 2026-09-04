@@ -115,3 +115,32 @@ def test_invalid_type_exits_nonzero(tmp_path):
 def test_unknown_subcommand_exits_nonzero(tmp_path):
     result = _run(["frobnicate"], vault_dir=tmp_path)
     assert result.returncode != 0
+
+
+def test_write_passes_the_promotes_tag_through(tmp_path):
+    """The flag is how continuity records that a memory has been re-scoped:
+    the tag lands on the new entry and names the one it relocates."""
+    (tmp_path / "10-projects" / "LOGOS").mkdir(parents=True)
+    result = _run(
+        ["write", "--type", "feedback", "--name", "tabs-are-four-spaces",
+         "--subject", "LOGOS", "--description", "A general coding preference.",
+         "--promotes", "logos-tabs"],
+        vault_dir=tmp_path,
+        stdin="Body.\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "promotes: logos-tabs" in Path(result.stdout.strip()).read_text()
+
+
+def test_write_without_the_flag_emits_no_tag(tmp_path):
+    (tmp_path / "10-projects" / "LOGOS").mkdir(parents=True)
+    result = _run(
+        ["write", "--type", "project", "--name", "plain",
+         "--subject", "LOGOS", "--description", "d"],
+        vault_dir=tmp_path,
+        stdin="Body.\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "promotes" not in Path(result.stdout.strip()).read_text()

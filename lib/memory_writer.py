@@ -32,14 +32,16 @@ def write(
     subject: str,
     body: str,
     provider: Provider | None = None,
+    promotes: str | None = None,
 ) -> str:
     """Validate, store via provider, and append a MEMORY.md bullet.
 
     Returns the stored path/id reported by the provider.
 
     Raises:
-        ValueError: if `type` is not one of VALID_TYPES, or if `name`,
-            `description`, or `subject` is empty/whitespace.
+        ValueError: if `type` is not one of VALID_TYPES, if `name`,
+            `description`, or `subject` is empty/whitespace, or if `promotes`
+            is given but blank.
         MemoryCollisionError: re-raised from the provider when the resolved
             location already exists.
         MemoryAmbiguousSubjectError: re-raised from the provider when subject
@@ -89,6 +91,11 @@ def write(
             f"subject must not contain the index separator '\u00b7'; "
             f"got {subject!r}"
         )
+    # `promotes` names the entry this one relocates. Omit it entirely for an
+    # ordinary memory; a blank value is a caller bug, not "no tag".
+    if promotes is not None and not promotes.strip():
+        raise ValueError("promotes must name an entry, or be omitted")
+    promotes = promotes.strip() if promotes else None
 
     provider = provider if provider is not None else _get_provider()
     # Always source vault_root from the provider, not from the env, so an
@@ -106,6 +113,7 @@ def write(
             type=type,
             subject=subject,
             body=body,
+            promotes=promotes,
         )
         path = provider.put(entry)
 

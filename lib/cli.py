@@ -139,6 +139,7 @@ def cmd_write(args: argparse.Namespace) -> int:
             type=args.type,
             subject=args.subject,
             body=body,
+            promotes=args.promotes,
         )
     except (
         ValueError,
@@ -207,6 +208,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_write.add_argument("--name", required=True)
     p_write.add_argument("--subject", required=True)
     p_write.add_argument("--description", required=True)
+    p_write.add_argument(
+        "--promotes",
+        default=None,
+        help=(
+            "name of the entry this one relocates; queries skip that entry "
+            "while it stays retrievable by name"
+        ),
+    )
     p_write.set_defaults(func=cmd_write)
 
     p_list = sub.add_parser("list", help="List memory entries from MEMORY.md.")

@@ -291,3 +291,52 @@ def test_write_description_with_newline_raises(
             body="b",
             provider=provider,
         )
+
+
+# --- promotes tag ---------------------------------------------------------
+#
+# A promotion re-scopes a memory that was filed too narrowly. The tag goes on
+# the entry being CREATED and names the entry it relocates — never on the
+# original, which is what keeps memory append-only. It must be frontmatter:
+# index.rebuild_from_scan reads only the frontmatter head, by design, so a
+# body marker would be invisible to it.
+
+
+def test_write_records_the_promotes_tag_in_frontmatter(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    path = memory_writer.write(
+        name="tabs-are-four-spaces",
+        description="A general coding preference.",
+        type="feedback",
+        subject="user",
+        body="Body.",
+        provider=provider,
+        promotes="logos-tabs",
+    )
+
+    frontmatter = Path(path).read_text().split("---")[1]
+    assert "promotes: logos-tabs" in frontmatter
+
+
+def test_write_without_promotes_emits_no_tag(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    """An ordinary memory is unchanged — no empty or null field."""
+    path = memory_writer.write(
+        name="plain", description="d", type="project", subject="user",
+        body="Body.", provider=provider,
+    )
+
+    assert "promotes" not in Path(path).read_text()
+
+
+def test_promotes_must_name_something(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    for bad in ("", "   "):
+        with pytest.raises(ValueError, match="promotes"):
+            memory_writer.write(
+                name="x", description="d", type="project", subject="user",
+                body="b", provider=provider, promotes=bad,
+            )
