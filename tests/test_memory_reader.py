@@ -360,3 +360,84 @@ def test_list_skips_entries_with_non_utf8_bodies(
 
     names = [e.name for e in memory_reader.list()]
     assert names == ["good"]
+
+
+# --- promoted-away entries: gone from queries, still reachable ------------
+#
+# Putting the tag on the promotion rather than the original is what lets the
+# original survive intact. `list` is a query and skips it; `get` is a direct
+# retrieval by name and must not — otherwise the promotion's tag would point
+# at something nothing can fetch, and the knowledge really would be lost.
+
+
+def _promotion_pair(vault: Path) -> None:
+    """An original filed under LOGOS, and the promotion that re-scopes it."""
+    original = vault / "10-projects" / "LOGOS" / ".memory" / "2026-09-04-logos-tabs.md"
+    original.parent.mkdir(parents=True, exist_ok=True)
+    original.write_text(
+        "---\nname: logos-tabs\ndescription: Tabs are four spaces.\n"
+        "type: feedback\nsubject: LOGOS\n---\nOriginal body.\n",
+        encoding="utf-8",
+    )
+    promoted = vault / ".memory" / "2026-09-04-tabs-are-four-spaces.md"
+    promoted.parent.mkdir(parents=True, exist_ok=True)
+    promoted.write_text(
+        "---\nname: tabs-are-four-spaces\ndescription: A general coding preference.\n"
+        "type: feedback\nsubject: user\npromotes: logos-tabs\n---\nPromoted body.\n",
+        encoding="utf-8",
+    )
+    index.rebuild_from_scan(vault)
+
+
+def test_list_does_not_return_a_promoted_away_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    _promotion_pair(tmp_path)
+
+    assert [e.name for e in memory_reader.list(type="feedback")] == [
+        "tabs-are-four-spaces"
+    ]
+
+
+def test_get_still_returns_a_promoted_away_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """This is how an agent follows a promotion's tag back to the original."""
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    _promotion_pair(tmp_path)
+
+    entry = memory_reader.get("logos-tabs", "feedback")
+    assert entry is not None
+    assert "Original body." in entry.body
+
+
+def test_get_falls_back_to_the_filesystem_for_a_promoted_away_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The index lists current answers; the entry files are the record. A name
+    the index no longer lists is resolved from disk rather than reported
+    missing, which is what keeps a promotion's tag followable."""
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    _promotion_pair(tmp_path)
+    assert "logos-tabs" not in (tmp_path / "MEMORY.md").read_text()
+
+    assert memory_reader.get("logos-tabs", "feedback") is not None
+
+
+def test_get_still_returns_none_for_a_name_that_was_never_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    _promotion_pair(tmp_path)
+
+    assert memory_reader.get("never-existed", "feedback") is None
+
+
+def test_get_does_not_confuse_types_when_falling_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("MEMORY_VAULT_DIR", str(tmp_path))
+    _promotion_pair(tmp_path)
+
+    assert memory_reader.get("logos-tabs", "project") is None

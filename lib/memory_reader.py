@@ -95,9 +95,13 @@ def get(name: str, type: str) -> Entry | None:  # noqa: A002
     """Look up an entry by (name, type) via the index; return parsed Entry or None.
 
     Honors the module-level contract: if MEMORY.md is missing or empty,
-    rebuild from a filesystem scan once and retry the lookup. A miss on
-    a non-empty index is treated as a real miss and *not* re-scanned —
-    only missing/empty index triggers fallback.
+    rebuild from a filesystem scan once and retry the lookup.
+
+    A miss on a non-empty index falls back to a filesystem lookup for that one
+    name. Promotion removes an entry's line from the index while leaving the
+    file in place, so "not listed" no longer implies "not present" -- and a
+    promotion's `promotes` tag has to stay followable to the entry it names.
+    The fallback reads files and never rewrites the index.
     """
     vault_root = _resolve_vault_root()
     rel = index.lookup(vault_root, name, type)
@@ -110,9 +114,28 @@ def get(name: str, type: str) -> Entry | None:  # noqa: A002
             index.rebuild_from_scan(vault_root)
             rel = index.lookup(vault_root, name, type)
         if rel is None:
-            return None
+            # The index lists *current answers*; the entry files are the
+            # record. A promoted-away entry is deliberately absent from the
+            # index but still on disk, and its promotion's `promotes` tag
+            # points at it by name -- so a miss falls back to the filesystem
+            # rather than reporting the entry gone. Without this the tag would
+            # name something nothing can fetch.
+            return _find_entry_on_disk(vault_root, name, type)
     full = vault_root / rel
     return _parse_entry_file(full)
+
+
+def _find_entry_on_disk(vault_root: Path, name: str, type: str) -> Entry | None:
+    """Scan `.memory/` directories for the entry with this name and type.
+
+    Only reached on an index miss, which is rare: either a promoted-away entry
+    being followed from a promotion's tag, or a name that was never written.
+    """
+    for path in sorted(vault_root.rglob(".memory/*.md")):
+        entry = _parse_entry_file(path)
+        if entry is not None and entry.name == name and entry.type == type:
+            return entry
+    return None
 
 
 def _default_providers() -> list["Provider"]:
