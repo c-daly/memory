@@ -32,14 +32,20 @@ def write(
     subject: str,
     body: str,
     provider: Provider | None = None,
+    fields: dict[str, str] | None = None,
 ) -> str:
     """Validate, store via provider, and append a MEMORY.md bullet.
 
     Returns the stored path/id reported by the provider.
 
     Raises:
-        ValueError: if `type` is not one of VALID_TYPES, or if `name`,
-            `description`, or `subject` is empty/whitespace.
+        ValueError: if `type` is not one of VALID_TYPES, if `name`,
+            `description`, or `subject` is empty/whitespace, or if `fields`
+            carries a reserved or malformed key.
+
+    `fields` is optional extra frontmatter, persisted verbatim and never
+    interpreted. It exists so a consumer can record something memory does not
+    model without memory having to learn what it means.
         MemoryCollisionError: re-raised from the provider when the resolved
             location already exists.
         MemoryAmbiguousSubjectError: re-raised from the provider when subject
@@ -90,6 +96,19 @@ def write(
             f"got {subject!r}"
         )
 
+    # Extra frontmatter is the caller's, but it may not shadow memory's own
+    # schema: `subject` decides placement and (name, type) is the lookup key,
+    # so an override would file the entry somewhere the call did not say.
+    for key in (fields or {}):
+        if not isinstance(key, str) or not key.strip() or any(
+            c in key for c in ":\r\n"
+        ):
+            raise ValueError(f"invalid field name: {key!r}")
+        if key in ("name", "description", "type", "subject"):
+            raise ValueError(
+                f"field name {key!r} is reserved; pass it as the argument instead"
+            )
+
     provider = provider if provider is not None else _get_provider()
     # Always source vault_root from the provider, not from the env, so an
     # injected provider with a custom root keeps its index file and entry
@@ -106,6 +125,7 @@ def write(
             type=type,
             subject=subject,
             body=body,
+            fields=fields,
         )
         path = provider.put(entry)
 

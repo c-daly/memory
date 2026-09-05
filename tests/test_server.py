@@ -6,6 +6,7 @@ the module imports cleanly and registers the four expected tools.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -69,3 +70,29 @@ def test_memory_write_returns_error_string_on_validation_failure():
     )
     assert result.returncode == 0, result.stderr
     assert "ok" in result.stdout
+
+
+def test_memory_write_accepts_caller_fields(tmp_path):
+    """The MCP surface persists extra frontmatter too — a client that could
+    write but not record an unmodelled field would be a second entry point to
+    the same operation with fewer capabilities."""
+    venv_py = ROOT / ".venv" / "bin" / "python"
+    if not venv_py.exists():
+        pytest.skip(".venv not bootstrapped")
+    (tmp_path / "10-projects" / "LOGOS").mkdir(parents=True)
+    code = (
+        "import sys;"
+        "sys.path.insert(0, 'lib');"
+        "from server import memory_write;"
+        "fn = getattr(memory_write, 'fn', memory_write);"
+        "out = fn(type='feedback', name='n', subject='LOGOS',"
+        " description='d', body='b', fields={'promotes': 'other'});"
+        "assert not out.startswith('error: '), out;"
+        "print(out)"
+    )
+    result = subprocess.run(
+        [str(venv_py), "-c", code], cwd=str(ROOT), capture_output=True, text=True,
+        env={**os.environ, "MEMORY_VAULT_DIR": str(tmp_path)},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "promotes: other" in Path(result.stdout.strip()).read_text()

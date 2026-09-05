@@ -27,7 +27,7 @@ v0.1.0 — append-locking (T3), entity-locality enforcement (audit #6), and the 
 **CLI** (via `bin/memory`):
 
 ```
-memory write --type T --name N --subject S --description D    # body from stdin
+memory write --type T --name N --subject S --description D [--field K=V ...]   # body from stdin
 memory list  [--type T] [--subject S]
 memory get   --name N --type T
 memory rebuild-index                                          # rescan vault, regenerate MEMORY.md
@@ -37,10 +37,32 @@ memory resolve-scope <subject>                               # list memory entri
 
 **MCP** (via `bin/memory-server`, FastMCP):
 
-- `memory_write(type, name, subject, description, body)` — write; returns stored path or `error: ...`
+- `memory_write(type, name, subject, description, body, fields=None)` — write; returns stored path or `error: ...`
 - `memory_list(type=None, subject=None)` — list as markdown bullets
 - `memory_get(name, type)` — single entry as markdown or `not found`
 - `memory_rebuild_index()` — regenerate MEMORY.md; returns count
+
+### Extra frontmatter
+
+The four frontmatter fields are memory's own schema. `--field KEY=VALUE`
+(repeatable, or `fields=` on the Python and MCP surfaces) records anything
+beyond them:
+
+```
+memory write --type feedback --name tabs-are-four-spaces --subject user \
+             --description "A general coding preference." \
+             --field promotes=logos-tabs
+```
+
+Memory persists these verbatim and never interprets them — the meaning belongs
+to whoever wrote them. That is deliberate: a consumer needing a field memory
+does not model gets one without memory having to learn its semantics, and
+without every other store having to learn them too. The reader already ignores
+unknown keys, so extras round-trip.
+
+Reserved: a field may not shadow `name`, `description`, `type` or `subject` —
+`subject` decides placement and `(name, type)` is the lookup key, so an
+override would file the entry somewhere the call did not say.
 
 ## Configuration
 
