@@ -89,3 +89,24 @@ tests/                       # pytest (152 tests; 100% pass)
 ```
 
 Plans and decisions for this plugin live in `<vault>/10-projects/memory/`.
+
+### Bounded retrieval for small-context clients
+
+The existing MCP server also exposes two read-only tools. Legacy tools retain
+ their existing behavior.
+
+- `memory_search(query="", type="", subject="", offset=0, limit=6, max_bytes=4096)`
+  searches indexed names, subjects and descriptions. Type and subject are exact
+  filters; query words rank matching summaries. Results include source paths,
+  total matches, `more` and `next_offset`. Summaries may be shortened explicitly.
+- `memory_read(name, type, offset=0, max_bytes=4096, revision="")` reads a page of
+  the original Markdown. Pass `next_offset` and `revision` back for the next page;
+  a changed file rejects continuation rather than mixing versions. Offsets count
+  Unicode characters. Names, types, source paths and revision hashes remain exact.
+
+Both return bounded JSON, including escaping when counted as a model message.
+`max_bytes` is 1024–8192. They never write entries or rebuild a missing index.
+Source dates describe recorded notes, not independently observed live state.
+For a small-model Harness profile, expose only these two memory tools and fetch
+one short personal profile automatically; search and read other records as needed.
+The storage and retrieval remain usable without a desktop or voice adapter.

@@ -25,7 +25,7 @@ def test_server_imports_and_registers_tools():
         "assert server.mcp.name == 'memory', server.mcp.name;"
         "tools = asyncio.run(server.mcp.list_tools());"
         "names = sorted(t.name for t in tools);"
-        "expected = ['memory_get', 'memory_list', 'memory_rebuild_index', 'memory_write'];"
+        "expected = ['memory_get', 'memory_list', 'memory_read', 'memory_rebuild_index', 'memory_search', 'memory_write'];"
         "assert names == expected, names;"
         "print('ok')"
     )
