@@ -20,11 +20,11 @@ bootstrap_venv() {
     if ! command -v uv >/dev/null 2>&1; then
         echo "memory: $VENV missing and 'uv' not found on PATH." >&2
         echo "Install uv (https://docs.astral.sh/uv/), or create the venv manually:" >&2
-        echo "  cd $MEMORY_ROOT && python3 -m venv .venv && .venv/bin/pip install mcp 'pyyaml>=6.0'" >&2
+        echo "  cd $MEMORY_ROOT && python3 -m venv .venv && .venv/bin/pip install 'mcp>=1,<2' 'pyyaml>=6.0'" >&2
         exit 1
     fi
     uv venv "$VENV" >&2
-    uv pip install --python "$VENV/bin/python" mcp "pyyaml>=6.0" >&2
+    uv pip install --python "$VENV/bin/python" "mcp>=1,<2" "pyyaml>=6.0" >&2
 }
 
 if [[ ! -x "$VENV/bin/python" ]]; then
