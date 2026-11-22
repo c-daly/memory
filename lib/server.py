@@ -85,5 +85,27 @@ def memory_rebuild_index() -> int | str:
         return f"error: {exc}"
 
 
+@mcp.tool()
+def memory_search(query: str = '', type: str = '', subject: str = '', offset: int = 0,
+                  limit: int = 6, max_bytes: int = 4096) -> str:
+    """Search memory summaries. Filter by type/subject and meaningful query words.
+    Results are bounded JSON with source paths and next_offset; read names for detail.
+    Uses the existing index without rebuilding it. Maximum output is 8192 bytes.
+    """
+    from bounded_read import search
+    return search(query, type, subject, offset, limit, max_bytes)
+
+
+@mcp.tool()
+def memory_read(name: str, type: str, offset: int = 0, max_bytes: int = 4096,
+                revision: str = '') -> str:
+    """Read a bounded page of a named memory. Keep name/type exact from search.
+    For more text, pass next_offset and revision back. Dates are historical notes.
+    Reads the existing vault only. Maximum output is 8192 bytes.
+    """
+    from bounded_read import read
+    return read(name, type, offset, max_bytes, revision)
+
+
 if __name__ == "__main__":
     mcp.run()
