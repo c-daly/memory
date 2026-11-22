@@ -115,3 +115,43 @@ def test_invalid_type_exits_nonzero(tmp_path):
 def test_unknown_subcommand_exits_nonzero(tmp_path):
     result = _run(["frobnicate"], vault_dir=tmp_path)
     assert result.returncode != 0
+
+
+def test_write_accepts_repeated_field_flags(tmp_path):
+    """--field is how a caller records something memory does not model.
+    Repeatable, since frontmatter is a map."""
+    (tmp_path / "10-projects" / "LOGOS").mkdir(parents=True)
+    result = _run(
+        ["write", "--type", "feedback", "--name", "n", "--subject", "LOGOS",
+         "--description", "d", "--field", "promotes=other", "--field", "note=x"],
+        vault_dir=tmp_path, stdin="Body.\n",
+    )
+
+    assert result.returncode == 0, result.stderr
+    text = Path(result.stdout.strip()).read_text()
+    assert "promotes: other" in text
+    assert "note: x" in text
+
+
+def test_write_rejects_a_field_without_an_equals(tmp_path):
+    (tmp_path / "10-projects" / "LOGOS").mkdir(parents=True)
+    result = _run(
+        ["write", "--type", "feedback", "--name", "n", "--subject", "LOGOS",
+         "--description", "d", "--field", "nonsense"],
+        vault_dir=tmp_path, stdin="Body.\n",
+    )
+
+    assert result.returncode != 0
+    assert "field" in result.stderr.lower()
+
+
+def test_write_rejects_a_field_that_shadows_the_schema(tmp_path):
+    (tmp_path / "10-projects" / "LOGOS").mkdir(parents=True)
+    result = _run(
+        ["write", "--type", "feedback", "--name", "n", "--subject", "LOGOS",
+         "--description", "d", "--field", "subject=elsewhere"],
+        vault_dir=tmp_path, stdin="Body.\n",
+    )
+
+    assert result.returncode != 0
+    assert "reserved" in result.stderr.lower()

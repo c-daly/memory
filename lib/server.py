@@ -22,12 +22,17 @@ mcp = FastMCP("memory")
 
 @mcp.tool()
 def memory_write(
-    type: str, name: str, subject: str, description: str, body: str
+    type: str, name: str, subject: str, description: str, body: str,
+    fields: dict[str, str] | None = None,
 ) -> str:
     """Write a memory entry. Returns the stored path, or 'error: ...' on a
     business-validation failure (matches the CLI's contract so MCP
     clients see the same one-line error format as shell callers, not a
     raw traceback wrapped by FastMCP).
+
+    `fields` is optional extra frontmatter, persisted verbatim and never
+    interpreted, for recording something memory does not model. It may not
+    shadow name/description/type/subject.
     """
     from providers.base import (
         MemoryAmbiguousSubjectError,
@@ -41,6 +46,7 @@ def memory_write(
             type=type,
             subject=subject,
             body=body,
+            fields=fields,
         )
     except (
         ValueError,

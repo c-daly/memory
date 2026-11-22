@@ -22,6 +22,10 @@ class Entry:
     `type` is the semantic role (user | feedback | project | reference).
     `subject` is what the memory is about; it determines placement.
     They are independent.
+
+    `fields` is optional caller-supplied frontmatter rendered after the four.
+    Memory persists it without interpreting it: a consumer that needs a field
+    the store does not model gets one without the store learning its meaning.
     """
 
     name: str
@@ -29,6 +33,7 @@ class Entry:
     type: str
     subject: str
     body: str
+    fields: dict[str, str] | None = None
 
     def to_markdown(self) -> str:
         """Render this Entry as a YAML-frontmatter markdown document.
@@ -49,6 +54,8 @@ class Entry:
             "type": self.type,
             "subject": self.subject,
         }
+        if self.fields:
+            frontmatter.update(self.fields)
         fm_text = _yaml.safe_dump(frontmatter, sort_keys=False).strip()
         body = self.body if self.body.endswith("\n") else self.body + "\n"
         return f"---\n{fm_text}\n---\n{body}"

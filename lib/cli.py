@@ -130,8 +130,27 @@ def cmd_record(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_fields(pairs: list[str] | None) -> dict[str, str]:
+    """Turn repeated `--field k=v` into a frontmatter map.
+
+    Split on the first `=` only, so a value may contain one.
+    """
+    fields: dict[str, str] = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep:
+            raise ValueError(f"--field expects key=value; got {pair!r}")
+        fields[key.strip()] = value
+    return fields
+
+
 def cmd_write(args: argparse.Namespace) -> int:
     body = sys.stdin.read()
+    try:
+        fields = _parse_fields(args.field)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     try:
         path = memory_writer.write(
             name=args.name,
@@ -139,6 +158,7 @@ def cmd_write(args: argparse.Namespace) -> int:
             type=args.type,
             subject=args.subject,
             body=body,
+            fields=fields,
         )
     except (
         ValueError,
@@ -207,6 +227,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_write.add_argument("--name", required=True)
     p_write.add_argument("--subject", required=True)
     p_write.add_argument("--description", required=True)
+    p_write.add_argument(
+        "--field",
+        action="append",
+        metavar="KEY=VALUE",
+        help=(
+            "extra frontmatter, repeatable; persisted verbatim and never "
+            "interpreted (may not shadow name/description/type/subject)"
+        ),
+    )
     p_write.set_defaults(func=cmd_write)
 
     p_list = sub.add_parser("list", help="List memory entries from MEMORY.md.")

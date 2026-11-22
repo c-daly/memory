@@ -13,6 +13,8 @@ GitHub: `c-daly/memory`. Re-derived after the original 2026-05-09 plan was lost 
 - **Audit #6 — entity-locality enforcement** shipped 2026-05-17. The inbox fallback in `VaultProvider._resolve_subject_folder` was replaced with a hard `MemorySubjectNotFoundError`; an optional alias registry at `<vault>/.memory-aliases.yaml` handles naming drift.
 - **v2 auto-memory absorption** merged 2026-05-26 (PR #5): a `SessionStart` hook (`hooks/session-start.sh`) emits memory's brief into each session, entries file into entity-local `<entity>/.memory/`, a one-shot migration (`scripts/migrate-auto-memory.sh`) imports legacy auto-memory, and the CLI gains `brief` + `resolve-scope`. Read/surfacing side only — write-side hook capture is unbuilt (in-flight as the slice-1 recorder, memory PR #6).
 
+- **Caller-supplied frontmatter** shipped 2026-09-05 (PR #11): `write(..., fields=)` / `--field K=V` persists extra frontmatter verbatim, never interpreted, reserved keys refused. Added so consumers can record what memory does not model — continuity's promotion tag is the first — without memory acquiring their semantics.
+
 See `<vault>/10-projects/memory/narrative.md` for the dated chronological state.
 
 ## Canonical state files (read these for project recovery)

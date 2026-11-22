@@ -291,3 +291,80 @@ def test_write_description_with_newline_raises(
             body="b",
             provider=provider,
         )
+
+
+# --- caller-supplied frontmatter fields -----------------------------------
+#
+# The four required fields are memory's own schema. Anything beyond them is
+# the caller's business: memory persists what it is given without knowing what
+# it means. Consumers that need a field the store does not model (continuity's
+# promotion tag, say) get one without the store learning their semantics.
+# The reader already tolerates unknown keys; only the write side lacked a way
+# to set them.
+
+
+def test_write_persists_caller_supplied_fields(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    path = memory_writer.write(
+        name="n", description="d", type="project", subject="user", body="b",
+        provider=provider, fields={"promotes": "other-entry"},
+    )
+
+    frontmatter = Path(path).read_text().split("---")[1]
+    assert "promotes: other-entry" in frontmatter
+
+
+def test_write_without_fields_is_unchanged(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    path = memory_writer.write(
+        name="n", description="d", type="project", subject="user", body="b",
+        provider=provider,
+    )
+
+    frontmatter = Path(path).read_text().split("---")[1]
+    assert set(frontmatter.split()) >= {"name:", "description:", "type:", "subject:"}
+    assert frontmatter.count(":") == 4
+
+
+def test_caller_fields_cannot_override_the_schema(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    """`subject` decides placement and `name`/`type` are the lookup key.
+    Letting a caller field shadow them would file the entry somewhere other
+    than where the call said, silently."""
+    for reserved in ("name", "description", "type", "subject"):
+        with pytest.raises(ValueError, match=reserved):
+            memory_writer.write(
+                name="n", description="d", type="project", subject="user",
+                body="b", provider=provider, fields={reserved: "hijacked"},
+            )
+
+
+def test_caller_field_keys_must_be_plain(
+    vault: Path, provider: FilesystemProvider
+) -> None:
+    """A key with a colon or newline produces frontmatter that no longer
+    parses, making the entry silently invisible on read."""
+    for bad_key in ("has: colon", "has\nnewline", "", "   "):
+        with pytest.raises(ValueError, match="field name"):
+            memory_writer.write(
+                name="n", description="d", type="project", subject="user",
+                body="b", provider=provider, fields={bad_key: "v"},
+            )
+
+
+def test_caller_field_values_round_trip_through_the_reader(
+    vault: Path, provider: FilesystemProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Values go through yaml.safe_dump like every other field, so a value
+    containing ':' or '#' does not break the document."""
+    path = memory_writer.write(
+        name="n", description="d", type="project", subject="user", body="b",
+        provider=provider, fields={"note": "colon: and #hash"},
+    )
+
+    import yaml
+    fm = yaml.safe_load(Path(path).read_text().split("---")[1])
+    assert fm["note"] == "colon: and #hash"
