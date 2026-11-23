@@ -61,7 +61,7 @@ If `uv` is unavailable, create the venv manually:
 ```
 cd ~/.claude/plugins/memory
 python3 -m venv .venv
-.venv/bin/pip install mcp 'pyyaml>=6.0'
+.venv/bin/pip install 'mcp>=1,<2' 'pyyaml>=6.0'
 ```
 
 The CLI and MCP server share the same venv.
