@@ -15,7 +15,7 @@ if [[ ! -x "$VENV/bin/python" ]]; then
     if [[ ! -x "$VENV/bin/python" ]]; then
         if command -v uv >/dev/null 2>&1; then
             uv venv "$VENV" >&2
-            uv pip install --python "$VENV/bin/python" mcp "pyyaml>=6.0" >&2
+            uv pip install --python "$VENV/bin/python" "mcp>=1,<2" "pyyaml>=6.0" >&2
         else
             echo "memory: $VENV missing; install 'uv' or create .venv manually (see bin/memory-server)." >&2
             exit 1
